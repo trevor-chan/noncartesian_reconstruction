@@ -1,0 +1,12 @@
+*.png
+*.npy
+*.npz
+*.ipynb_checkpoints
+*.h5
+*.zip
+*.json
+*.jsonl
+*.pkl
+*.pth
+*.pt
+__pycache__/
