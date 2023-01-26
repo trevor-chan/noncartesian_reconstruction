@@ -55,3 +55,4 @@ tick 0     kimg 0.0       time 13s          sec/tick 1.7     sec/kimg 54.56   ma
 tick 1     kimg 50.0      time 14m 09s      sec/tick 835.6   sec/kimg 16.71   maintenance 0.4    cpumem 4.58   gpumem 15.42  reserved 15.95 
 tick 2     kimg 100.1     time 28m 07s      sec/tick 837.5   sec/kimg 16.74   maintenance 0.0    cpumem 4.58   gpumem 15.42  reserved 15.95 
 tick 3     kimg 150.1     time 42m 07s      sec/tick 839.7   sec/kimg 16.79   maintenance 0.0    cpumem 4.58   gpumem 15.42  reserved 15.95 
+tick 4     kimg 200.1     time 56m 07s      sec/tick 840.2   sec/kimg 16.80   maintenance 0.0    cpumem 4.58   gpumem 15.42  reserved 15.95 
