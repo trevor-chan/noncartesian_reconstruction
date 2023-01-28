@@ -233,8 +233,7 @@ class NonCartesianDataset(Dataset):
 
     def _load_raw_kspace(self, raw_idx):
         fname = self._image_fnames[raw_idx]
-        with self._open_file(fname
-        ) as f:
+        with self._open_file(fname) as f:
             if self._file_ext(fname) == '.npy':
                 kspace = np.load(f)
                 assert kspace.dtype == np.float32, 'kspace datatype should be float32, half precision results in a significant drop in im quality'
@@ -258,6 +257,10 @@ class NonCartesianDataset(Dataset):
         prior_complex = prior_complex.astype(np.complex64)
         image_2ch = np.stack((image_complex.real, image_complex.imag),axis=0)
         prior_2ch = np.stack((prior_complex.real, prior_complex.imag),axis=0)
+
+        #Scaling factor to increase the magnitude of image intensities, corrected range is roughly -1,+1
+        image_2ch = image_2ch * 1000
+        prior_2ch = prior_2ch * 1000
 
         return image_2ch, prior_2ch 
 
