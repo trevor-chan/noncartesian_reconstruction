@@ -251,10 +251,10 @@ class NonCartesianDataset(Dataset):
         kspace_complex = kspace_2ch[0,:,:]+kspace_2ch[1,:,:]*1j
         image_complex = sigpy.ifft(kspace_complex)
 
-        points,_ = generate_trajectory(kspace_complex.shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
+        points,alpha = generate_trajectory(kspace_complex.shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
         values = interpolate_values(points,kspace_complex)
         
-        prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape)
+        prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
         prior_complex = prior_complex.astype(np.complex64)
         image_2ch = np.stack((image_complex.real, image_complex.imag),axis=0)
         prior_2ch = np.stack((prior_complex.real, prior_complex.imag),axis=0)
