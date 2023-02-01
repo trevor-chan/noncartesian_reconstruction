@@ -194,7 +194,10 @@ class NonCartesianDataset(Dataset):
             raise IOError('Path must point to a directory or zip')
 
         PIL.Image.init()
-        self._image_fnames = sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy')
+
+         # Setting list to np array in order to combat multiprocessing leakage
+        self._image_fnames = np.array(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy')).astype(np.string_)
+
         if len(self._image_fnames) == 0:
             raise IOError('No numpy array files found in the specified path')
 
@@ -232,7 +235,7 @@ class NonCartesianDataset(Dataset):
         return dict(super().__getstate__(), _zipfile=None)
 
     def _load_raw_kspace(self, raw_idx):
-        fname = self._image_fnames[raw_idx]
+        fname = str(self._image_fnames[raw_idx], encoding='utf-8')
         with self._open_file(fname) as f:
             if self._file_ext(fname) == '.npy':
                 kspace = np.load(f)
@@ -262,7 +265,7 @@ class NonCartesianDataset(Dataset):
         image_2ch = image_2ch * 1000
         prior_2ch = prior_2ch * 1000
 
-        return image_2ch, prior_2ch 
+        return image_2ch, prior_2ch
 
     def _load_raw_labels(self):
         fname = 'dataset.json'

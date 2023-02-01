@@ -10,3 +10,4 @@
 *.pth
 *.pt
 __pycache__/
+training-runs
