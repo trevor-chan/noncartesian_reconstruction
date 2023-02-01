@@ -211,6 +211,8 @@ def training_loop(
         if done:
             break
 
+        torch.cuda.empty_cache()
+
     # Done.
     dist.print0()
     dist.print0('Exiting...')

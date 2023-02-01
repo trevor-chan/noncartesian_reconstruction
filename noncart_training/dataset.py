@@ -91,14 +91,17 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         raw_idx = self._raw_idx[idx]
-        raw_data = self._cached_images.get(raw_idx, None)
-        if raw_data is None:
-            image,prior = self._load_raw_image(raw_idx)
-            if self._cache:
-                self._cached_images[raw_idx] = image,prior
-        else:
-            image = raw_data[0]
-            prior = raw_data[1]
+        # raw_data = self._cached_images.get(raw_idx, None)
+        # if raw_data is None:
+        #     image,prior = self._load_raw_image(raw_idx)
+        #     if self._cache:
+        #         self._cached_images[raw_idx] = image,prior
+        # else:
+            # image = raw_data[0]
+            # prior = raw_data[1]
+        raw_data = self._load_raw_image(raw_idx)
+        image = raw_data[0]
+        prior = raw_data[1]
         assert isinstance(image, np.ndarray)
         assert isinstance(prior, np.ndarray)
         assert list(image.shape) == self.image_shape
@@ -195,8 +198,10 @@ class NonCartesianDataset(Dataset):
 
         PIL.Image.init()
 
-         # Setting list to np array in order to combat multiprocessing leakage
+        # Setting list to np array in order to combat multiprocessing leakage
         self._image_fnames = np.array(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy')).astype(np.string_)
+        # Setting list to torch tensor in order to combat multiprocessing leakage
+        #self._image_fnames = torch.tensor(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy'))
 
         if len(self._image_fnames) == 0:
             raise IOError('No numpy array files found in the specified path')
@@ -265,7 +270,7 @@ class NonCartesianDataset(Dataset):
         image_2ch = image_2ch * 1000
         prior_2ch = prior_2ch * 1000
 
-        return image_2ch, prior_2ch
+        return np.stack((image_2ch, prior_2ch),axis=0)
 
     def _load_raw_labels(self):
         fname = 'dataset.json'
