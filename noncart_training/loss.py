@@ -101,10 +101,11 @@ class ConditionalEDMLoss:
         yp, augment_labels = augment_pipe(imageprior) if augment_pipe is not None else (images, None)
 
         y = yp[:,:images.shape[1],:,:]
-        prior = yp[:,images.shape[1]:,:,:]
+        prior = yp[:,images.shape[1]:images.shape[1]*2,:,:]
+        # prior_mag = yp[:,images.shape[1]*2:,:,:]
         n = torch.randn_like(y) * sigma
 
-        ynp = torch.cat((y+n,prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
+        ynp = torch.cat((y+n, prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
         D_yn = net(ynp, sigma, labels, augment_labels=augment_labels)
         loss = weight * ((D_yn - y) ** 2)
         return loss

@@ -25,7 +25,7 @@ import glob
 
 def conditional_huen_sampler(
     net, latents, priors, class_labels=None, randn_like=torch.randn_like,
-    num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
+    num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
 ):
     # Adjust noise levels based on what's supported by the network.
@@ -39,8 +39,17 @@ def conditional_huen_sampler(
 
     # Main sampling loop.
     assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
-    priors = priors.to(torch.float64)
+    priors = priors.to(torch.float64)*50000
     x_next = latents.to(torch.float64) * t_steps[0]
+
+    print(priors)
+
+    prior_copy = np.array(priors[0].cpu())
+    x_next_copy = np.array(x_next[0].cpu())
+
+    PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
+    PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
+
 
     for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
         x_cur = x_next
@@ -51,6 +60,7 @@ def conditional_huen_sampler(
         x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
 
         #Concatenate x_hat and priors (undersampled 2ch images) for first forward pass
+        
         x_in = torch.cat((x_hat, priors), dim=1)
 
         # Euler step.
@@ -201,7 +211,7 @@ def main(network_pkl, priordir, outdir, subdirs, seeds, class_idx, max_batch_siz
         # Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
-        sampler_fn = ablation_sampler if have_ablation_kwargs else conditional_huen_sampler
+        sampler_fn = conditional_huen_sampler
         images = sampler_fn(net, latents, priors, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
         # Convert from complex to grayscale magnitude images

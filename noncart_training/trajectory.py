@@ -82,5 +82,35 @@ def kde_density_correction(points,values):   #extremely slow, no improvement
 def NUFFT_adjoint(points,values,matshape,alpha):
     values_c = fast_density_correction(points,values,alpha)
     image_2ch = sigpy.nufft_adjoint(values_c, points, oshape=matshape, oversamp=1)
-    image_2ch = np.flip(np.flip(image_2ch,axis=0),axis=1)
+    # image_2ch = np.flip(np.flip(image_2ch,axis=0),axis=1)
+    # image_2ch = image_2ch[::-1,::-1]
     return image_2ch
+
+def adaptive_channelwise_normalization(channel_image,low=1,high=99,clipping=True):
+    for ch in range(channel_image.shape[0]):
+        image = channel_image[ch,:,:]
+        high_percentile = np.percentile(image, high)
+        low_percentile = np.percentile(image, low)
+        
+        im_range=high_percentile-low_percentile
+        channel_image[ch,:,:] = np.divide((image-low_percentile),im_range)*2-1
+        if clipping:
+            channel_image[ch,:,:] = np.clip(image, -1, 1)
+    return channel_image
+    #Why is intensity scale for the image and the prior different? Pass 3 prior channels? normalized but unclipped real, imag, and (clipped) magnitude?
+    #This way the network sees the image structure, but also potentially gets information about sampling trajectory from the imaginary phase
+    #Ideas:
+        #Doesn't make sense to perform convolutions in kspace
+        #But also we want to compute a loss in kspace
+        #Necessary to find a way to compute a loss in image space that directly reflects differences in kspace? 
+def fixed_channelwise_normalization(channel_image,low=-0.001,high=0.001,clipping=False,realonly=True):
+    for ch in range(channel_image.shape[0]):
+        image = channel_image[ch,:,:]
+        im_range=high-low
+        channel_image[ch,:,:] = np.divide((image-low),im_range)*2-1
+        if clipping:
+            channel_image[ch,:,:] = np.clip(image, -1, 1)
+        if realonly:
+            break
+    return channel_image
+    

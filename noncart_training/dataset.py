@@ -102,17 +102,25 @@ class Dataset(torch.utils.data.Dataset):
         raw_data = self._load_raw_image(raw_idx)
         image = raw_data[0]
         prior = raw_data[1]
+        # prior_mag = np.expand_dims(raw_data[2][0,:,:], axis=0)
         assert isinstance(image, np.ndarray)
         assert isinstance(prior, np.ndarray)
+        # assert isinstance(prior_mag, np.ndarray)
+
         assert list(image.shape) == self.image_shape
         assert list(prior.shape) == self.image_shape
+
         assert image.dtype == np.float32
         assert prior.dtype == np.float32
+        # assert prior_mag.dtype == np.float32
+
         if self._xflip[idx]:
             assert image.ndim == 3 # CHW
             assert prior.ndim == 3 # CHW
+            # assert prior_mag.ndim ==3 # CHW
             image = image[:, :, ::-1]
             prior = prior[:, :, ::-1]
+            # prior_mag = prior_mag[:,:,::-1]
         return image.copy(), prior.copy(), self.get_label(idx)
 
     def get_label(self, idx):
@@ -252,6 +260,12 @@ class NonCartesianDataset(Dataset):
             kspace = kspace[:, :, np.newaxis] # HW => HWC
         kspace = kspace.transpose(2, 0, 1) # HWC => CHW
         return kspace
+    
+    def complex_to_magphase(self, array_complex):
+        array_mag = np.abs(array_complex).astype(np.float32)
+        array_phase = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
+        return np.stack((array_mag,array_phase),axis=0)
+
 
     def _load_raw_image(self, raw_idx):
         kspace_2ch = self._load_raw_kspace(raw_idx)
@@ -263,12 +277,17 @@ class NonCartesianDataset(Dataset):
         
         prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
         prior_complex = prior_complex.astype(np.complex64)
-        image_2ch = np.stack((image_complex.real, image_complex.imag),axis=0)
-        prior_2ch = np.stack((prior_complex.real, prior_complex.imag),axis=0)
+        image_2ch = self.complex_to_magphase(image_complex)
+        prior_2ch = self.complex_to_magphase(prior_complex)
 
-        #Scaling factor to increase the magnitude of image intensities, corrected range is roughly -1,+1
-        image_2ch = image_2ch * 1000
-        prior_2ch = prior_2ch * 1000
+        image_2ch = fixed_channelwise_normalization(image_2ch,  low=0,high=0.001,clipping=False, realonly=True)
+        prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.01,clipping=False, realonly=True)
+        
+        # PIL.Image.fromarray((prior_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_mag_{}.png'.format(raw_idx))
+        # PIL.Image.fromarray((prior_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_pha_{}.png'.format(raw_idx))
+        # PIL.Image.fromarray((image_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_mag_{}.png'.format(raw_idx))
+        # PIL.Image.fromarray((image_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_pha_{}.png'.format(raw_idx))
+        # PIL.Image.fromarray((prior_mag[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_magnitude_{}.png'.format(raw_idx))
 
         return np.stack((image_2ch, prior_2ch),axis=0)
 

@@ -20,24 +20,52 @@ def load_kspace_from_file(fname):
     kspace = kspace.transpose(2, 0, 1) # HWC => CHW
     return kspace
 
-def get_image_and_prior(fname, interleave_range, undersampling, alpha_range):
+def complex_to_magphase(self, array_complex):
+    array_mag = np.abs(array_complex).astype(np.float32)
+    array_phase = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
+    return np.stack((array_mag,array_phase),ais=0)
+
+def load_raw_image(fname): #Copied from dataset.py dataset class
     kspace_2ch = load_kspace_from_file(fname)
     kspace_complex = kspace_2ch[0,:,:]+kspace_2ch[1,:,:]*1j
     image_complex = sigpy.ifft(kspace_complex)
 
-    points,alpha = generate_trajectory(kspace_complex.shape, interleave_range = interleave_range, undersampling = undersampling, alpha_range = alpha_range) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
+    points,alpha = generate_trajectory(kspace_complex.shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
     values = interpolate_values(points,kspace_complex)
     
     prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
     prior_complex = prior_complex.astype(np.complex64)
-    image_2ch = np.stack((image_complex.real, image_complex.imag),axis=0)
-    prior_2ch = np.stack((prior_complex.real, prior_complex.imag),axis=0)
+    image_2ch = self.complex_to_magphase(image_complex)
+    prior_2ch = self.complex_to_magphase(prior_2ch)
 
+    # squeeze and clip to a range of +-1 within each channel
+    # prior_mag = fixed_channelwise_normalization(prior_mag, low=-0.01,high=0.01,clipping=False) #prior magnitude scaling by 1/200
+    # image_2ch = fixed_channelwise_normalization(image_2ch, low=-0.001,high=0.001,clipping=False) #image component scaling by 1/2000
+    # prior_2ch = fixed_channelwise_normalization(prior_2ch, low=-0.01,high=0.01,clipping=False) #prior component scaling by 1/200
+    
+    PIL.Image.fromarray((prior_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_real_{}.png'.format(raw_idx))
+    PIL.Image.fromarray((prior_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_imag_{}.png'.format(raw_idx))
+    PIL.Image.fromarray((image_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_real_{}.png'.format(raw_idx))
+    PIL.Image.fromarray((image_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_imag_{}.png'.format(raw_idx))
+    # PIL.Image.fromarray((prior_mag[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_magnitude_{}.png'.format(raw_idx))
+
+    # return np.stack((image_2ch, prior_2ch),axis=0)
     return image_2ch, prior_2ch 
 
-def complex_2_magnitude(matrix):
-    assert len(matrix.shape)==3
-    return np.abs(matrix[0,:,:]+matrix[1,:,:]*1j)
+# def get_image_and_prior(fname, interleave_range, undersampling, alpha_range):
+#     kspace_2ch = load_kspace_from_file(fname)
+#     kspace_complex = kspace_2ch[0,:,:]+kspace_2ch[1,:,:]*1j
+#     image_complex = sigpy.ifft(kspace_complex)
+
+#     points,alpha = generate_trajectory(kspace_complex.shape, interleave_range = interleave_range, undersampling = undersampling, alpha_range = alpha_range) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
+#     values = interpolate_values(points,kspace_complex)
+    
+#     prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
+#     prior_complex = prior_complex.astype(np.complex64)
+#     image_2ch = np.stack((image_complex.real, image_complex.imag),axis=0)
+#     prior_2ch = np.stack((prior_complex.real, prior_complex.imag),axis=0)
+
+#     return image_2ch, prior_2ch 
 
 
 
@@ -55,13 +83,13 @@ def main(kspacedir, interleave_min, interleave_max, undersampling, alpha_min, al
     interleave_range = (interleave_min,interleave_max)
     alpha_range = (alpha_min,alpha_max)
     for kspacefile in tqdm.tqdm(kspacelist):
-        image_2ch, prior_2ch = get_image_and_prior(kspacefile,interleave_range,undersampling,alpha_range)
+        image_2ch, prior_2ch = load_raw_image(kspacefile)
 
-        image_magnitude = complex_2_magnitude(image_2ch)[np.newaxis, :, :]
-        prior_magnitude = complex_2_magnitude(prior_2ch)[np.newaxis, :, :]
+        image_magnitude = image_2ch[0][np.newaxis, :, :]
+        prior_magnitude = prior_2ch[0][np.newaxis, :, :]
 
-        image_magnitude = (image_magnitude * 100 * 256).clip(0, 255).astype(np.uint8).transpose(1, 2, 0)
-        prior_magnitude = (prior_magnitude * 100 * 256).clip(0, 255).astype(np.uint8).transpose(1, 2, 0)
+        image_magnitude = (image_magnitude * 100 * 255).clip(0, 255).astype(np.uint8).transpose(1, 2, 0)
+        prior_magnitude = (prior_magnitude * 100 * 255).clip(0, 255).astype(np.uint8).transpose(1, 2, 0)
 
         outdir = f'{os.path.split(kspacedir)[0]}/il_{interleave_range[0]}-{interleave_range[1]}_u_{int(undersampling*100)}_a_{int(alpha_range[0])}-{int(alpha_range[1])}'
         os.makedirs(outdir, exist_ok=True)

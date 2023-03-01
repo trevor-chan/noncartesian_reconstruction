@@ -20,6 +20,9 @@ from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import misc
 
+# Import the W&B Python Library 
+import wandb
+
 #----------------------------------------------------------------------------
 
 def training_loop(
@@ -47,6 +50,16 @@ def training_loop(
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
 ):
+    run = wandb.init(
+        project="noncartesian reconstruction",
+        notes="prelim_experiments",
+        tags=["64x64","small_dataset","magnitude and phase"]
+    )
+
+    wandb.config = {
+        "batch_size": batch_size
+    }
+    
     # Initialize.
     start_time = time.time()
     np.random.seed((seed * dist.get_world_size() + dist.get_rank()) % (1 << 31))
@@ -76,8 +89,8 @@ def training_loop(
     net.train().requires_grad_(True).to(device)
     if dist.get_rank() == 0:
         with torch.no_grad():
+            #Need to change image channels for appropriate input summary for conditional model
             images = torch.zeros([batch_gpu, net.img_channels*2, net.img_resolution, net.img_resolution], device=device)
-            #Need to double image channels for appropriate input summary for conditional model
             sigma = torch.ones([batch_gpu], device=device)
             labels = torch.zeros([batch_gpu, net.label_dim], device=device)
             misc.print_module_summary(net, [images, sigma, labels], max_nesting=2)
@@ -126,8 +139,9 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 images, priors, labels = next(dataset_iterator) #get images and image priors separately from the dataset, also fetch labels
-                images = images.to(device).to(torch.float32) / 127.5 - 1
-                priors = priors.to(device).to(torch.float32) / 127.5 - 1
+                images = images.to(device).to(torch.float32)
+                priors = priors.to(device).to(torch.float32)
+                # prior_mags = prior_mags.to(device).to(torch.float32)
                 labels = labels.to(device)
                 loss = loss_fn(net=ddp, images=images, priors=priors, labels=labels, augment_pipe=augment_pipe) #currently calls ConditionalEDMLoss only
                 training_stats.report('Loss/loss', loss)
@@ -169,6 +183,9 @@ def training_loop(
         fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', torch.cuda.max_memory_reserved(device) / 2**30):<6.2f}"]
         torch.cuda.reset_peak_memory_stats()
         dist.print0(' '.join(fields))
+
+        # wandb logging:
+        wandb.log({"loss": loss})
 
         # Check for abort.
         if (not done) and dist.should_stop():
