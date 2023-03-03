@@ -39,10 +39,8 @@ def conditional_huen_sampler(
 
     # Main sampling loop.
     assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
-    priors = priors.to(torch.float64)*50000
+    priors = priors.to(torch.float64)
     x_next = latents.to(torch.float64) * t_steps[0]
-
-    print(priors)
 
     prior_copy = np.array(priors[0].cpu())
     x_next_copy = np.array(x_next[0].cpu())
@@ -125,7 +123,7 @@ def parse_int_list(s):
 @click.option('--seeds',                   help='Random seeds (e.g. 1,2,5-10)', metavar='LIST',                     type=parse_int_list, default='0', show_default=True)
 @click.option('--subdirs',                 help='Create subdirectory for every 1000 seeds',                         is_flag=False)
 @click.option('--class', 'class_idx',      help='Class label  [default: random]', metavar='INT',                    type=click.IntRange(min=0), default=None)
-@click.option('--batch', 'max_batch_size', help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=64, show_default=True)
+@click.option('--batch', 'max_batch_size', help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=16, show_default=True)
 
 @click.option('--steps', 'num_steps',      help='Number of sampling steps', metavar='INT',                          type=click.IntRange(min=1), default=18, show_default=True)
 @click.option('--sigma_min',               help='Lowest noise level  [default: varies]', metavar='FLOAT',           type=click.FloatRange(min=0, min_open=True))
@@ -215,22 +213,29 @@ def main(network_pkl, priordir, outdir, subdirs, seeds, class_idx, max_batch_siz
         images = sampler_fn(net, latents, priors, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
         # Convert from complex to grayscale magnitude images
-        images_complex = images[:,0,:,:]+images[:,1,:,:]*1j
-        images_magnitude = np.abs(images_complex.cpu().numpy())
+        images_pha = images[:,1,:,:].cpu().numpy()
+        images_mag = images[:,0,:,:].cpu().numpy()
 
-        assert len(images_magnitude.shape)==3
+        assert len(images_mag.shape)==3
+        assert len(images_pha.shape)==3
 
         # Save images.
-        images_np = (images_magnitude * 50).clip(0, 255).astype(np.uint8)#.transpose(1, 2, 0)
+        images_mag_batch = ((images_mag+1)*127.5).clip(0, 255).astype(np.uint8)
+        images_pha_batch = ((images_pha+1)*127.5).clip(0, 255).astype(np.uint8)
         for idx in range(max_batch_size):
             os.makedirs(outdir, exist_ok=True)
-            savename = os.path.splitext(os.path.split(priorlist[idx])[1])[0]+'_recon.png'
-            image_path = os.path.join(outdir, savename)
-            image = images_np[idx,:,:]
-            if len(image.shape) == 2:
-                PIL.Image.fromarray(image[:, :], 'L').save(image_path)
+            savename_mag = os.path.splitext(os.path.split(priorlist[idx])[1])[0]+'_mag_recon.png'
+            savename_pha = os.path.splitext(os.path.split(priorlist[idx])[1])[0]+'_pha_recon.png'
+            image_mag_path = os.path.join(outdir, savename_mag)
+            image_pha_path = os.path.join(outdir, savename_pha)
+            image_mag = images_mag_batch[idx,:,:]
+            image_pha = images_pha_batch[idx,:,:]
+            if len(image_mag.shape) == 2:
+                PIL.Image.fromarray(image_mag[:, :], 'L').save(image_mag_path)
+                PIL.Image.fromarray(image_pha[:, :], 'L').save(image_pha_path)
             else:
-                PIL.Image.fromarray(image, 'RGB').save(image_path)
+                PIL.Image.fromarray(image_mag, 'RGB').save(image__mag_path)
+                PIL.Image.fromarray(image_pha, 'RGB').save(image_pha_path)
 
     # Done.
     torch.distributed.barrier()

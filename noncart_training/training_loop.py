@@ -185,7 +185,9 @@ def training_loop(
         dist.print0(' '.join(fields))
 
         # wandb logging:
-        wandb.log({"loss": loss})
+        wandb.log({"loss_mean": torch.mean(loss),
+                   "loss_stdv": torch.std(loss),
+                   "loss": loss})
 
         # Check for abort.
         if (not done) and dist.should_stop():
