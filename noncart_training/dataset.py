@@ -107,8 +107,8 @@ class Dataset(torch.utils.data.Dataset):
         assert isinstance(prior, np.ndarray)
         # assert isinstance(prior_mag, np.ndarray)
 
-        assert list(image.shape) == self.image_shape
-        assert list(prior.shape) == self.image_shape
+        assert image.shape == tuple(self.image_shape), f'{image.shape} , {tuple(self.image_shape)}'
+        assert prior.shape == tuple(self.image_shape), f'{prior.shape} , {tuple(self.image_shape)}'
 
         assert image.dtype == np.float32
         assert prior.dtype == np.float32
@@ -253,6 +253,7 @@ class NonCartesianDataset(Dataset):
             if self._file_ext(fname) == '.npy':
                 kspace = np.load(f)
                 assert kspace.dtype == np.float32, 'kspace datatype should be float32, half precision results in a significant drop in im quality'
+                assert kspace.shape[0] == kspace.shape[1], f'shape kspace = {kspace.shape}, file = {fname}'
             else:
                 print('ERROR - tried to load incompatible file type, requires float32 numpy array (.npy)')
                 return 0

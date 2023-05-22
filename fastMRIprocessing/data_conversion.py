@@ -12,7 +12,7 @@ from multiprocessing import Pool
 # sampling ratio is the density of kspace sampling along each dimension - (2,1) will correspond to 
 #      an image where the height of two rows equals the width of one column
 
-def process_h5_singlecoil(filepath,outshape=(256,256),sampling_ratio=(2,1),savedir='data_large'):
+def process_h5_singlecoil(filepath,outshape=(256,256),sampling_ratio=(2,1),savedir='data_256'):
     print(filepath)
     if savedir is None:
         savedir = os.path.split(filepath)[0]
@@ -20,7 +20,11 @@ def process_h5_singlecoil(filepath,outshape=(256,256),sampling_ratio=(2,1),saved
     
     with h5py.File(filepath,'r') as f:
         kspace = np.array(f['kspace'])
-    # recon = np.array(f['reconstruction_rss'])
+        # recon = np.array(f['reconstruction_rss'])
+        if kspace.shape[2] < outshape[0] or kspace.shape[3] < outshape[1]:
+            return 0
+        # assert kspace.shape[2] > outshape[0], f'kspace shape {kspace.shape}'
+        # assert kspace.shape[3] > outshape[1], f'kspace shape {kspace.shape}'
         slices, coils, height, width = kspace.shape    #kspace opens as (z, coils, height, width)
         kspace_cropped = kspace[:,:,int((height/2)-(outshape[0]*sampling_ratio[0]/2)):int((height/2)+(outshape[0]*sampling_ratio[0]/2)):sampling_ratio[0], 
                                     int((width/2)-(outshape[1]*sampling_ratio[1]/2)):int((width/2)+(outshape[1]*sampling_ratio[1]/2)):sampling_ratio[1]].copy()

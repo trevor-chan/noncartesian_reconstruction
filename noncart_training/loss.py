@@ -91,6 +91,18 @@ class ConditionalEDMLoss:
         self.P_std = P_std
         self.sigma_data = sigma_data
 
+    #Function to calculate the distance/loss between two phase images on a -1 to +1 scale
+    def angular_distance(self, yn, y):
+        top_dist = torch.abs(yn - y)
+        yn[yn<0]+=1
+        yn[yn>0]-=1
+        y[y<0]+=1
+        y[y>0]-=1
+        bot_dist = torch.abs(yn - y)
+        angular_dist = torch.where(top_dist<bot_dist, top_dist, bot_dist)
+        angular_dist = angular_dist*(1-angular_dist) #reduces magnitude of phase loss in the case where it is 180 degrees off - hopefully resulting in better stability
+        return angular_dist
+
     def __call__(self, net, images, priors, labels=None, augment_pipe=None):
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
@@ -107,7 +119,15 @@ class ConditionalEDMLoss:
 
         ynp = torch.cat((y+n, prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
         D_yn = net(ynp, sigma, labels, augment_labels=augment_labels)
-        loss = weight * ((D_yn - y) ** 2)
-        return loss
+
+        #sort out magnitude and phase channels - for phase, calculate loss using angular distance
+
+        loss_mag = weight * ((D_yn[:,::2,:,:] - y[:,::2,:,:])**2)
+        loss_phase = weight * (self.angular_distance(D_yn[:,::2,:,:],y[:,::2,:,:])**2)
+
+        loss = loss_mag+loss_phase
+
+        # loss = weight * ((D_yn - y) ** 2)
+        return loss, loss_mag, loss_phase
 
 #----------------------------------------------------------------------------

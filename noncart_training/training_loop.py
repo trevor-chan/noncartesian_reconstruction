@@ -143,7 +143,7 @@ def training_loop(
                 priors = priors.to(device).to(torch.float32)
                 # prior_mags = prior_mags.to(device).to(torch.float32)
                 labels = labels.to(device)
-                loss = loss_fn(net=ddp, images=images, priors=priors, labels=labels, augment_pipe=augment_pipe) #currently calls ConditionalEDMLoss only
+                loss, loss_mag, loss_phase = loss_fn(net=ddp, images=images, priors=priors, labels=labels, augment_pipe=augment_pipe) #currently calls ConditionalEDMLoss only
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
@@ -187,6 +187,8 @@ def training_loop(
         # wandb logging:
         wandb.log({"loss_mean": torch.mean(loss),
                    "loss_stdv": torch.std(loss),
+                   "loss_magnitude": torch.mean(loss_mag),
+                   "loss_phase": torch.mean(loss_phase),
                    "loss": loss})
 
         # Check for abort.

@@ -127,7 +127,7 @@ def training_loop(
                 images, labels = next(dataset_iterator)
                 images = images.to(device).to(torch.float32) / 127.5 - 1
                 labels = labels.to(device)
-                loss = loss_fn(net=ddp, images=images, labels=labels, augment_pipe=augment_pipe)
+                loss, loss_mag, loss_phase = loss_fn(net=ddp, images=images, labels=labels, augment_pipe=augment_pipe)
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
