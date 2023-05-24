@@ -21,6 +21,7 @@ from torch_utils import distributed as dist
 import glob
 import matplotlib.pyplot as plt
 
+
 #----------------------------------------------------------------------------
 # Modified conditional EDM sampler
 
@@ -223,7 +224,7 @@ def main(network_pkl, priordir, outdir, subdirs, seeds, class_idx, max_batch_siz
         # Save images.
         images_mag_batch = ((images_mag+1)*127.5).clip(0, 255).astype(np.uint8)
         cm = plt.get_cmap('twilight')
-        image_pha = (cm((image_pha+1)/2)*2)-1
+        images_pha = (cm((images_pha+1)/2)*2)-1
         images_pha_batch = ((images_pha+1)*127.5).clip(0, 255).astype(np.uint8)
         for idx in range(max_batch_size):
             os.makedirs(outdir, exist_ok=True)

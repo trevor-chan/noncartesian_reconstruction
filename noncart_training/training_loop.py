@@ -8,6 +8,7 @@
 """Main training loop."""
 
 import os
+import sys
 import time
 import copy
 import json
@@ -19,6 +20,11 @@ import dnnlib
 from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import misc
+import matplotlib.pyplot as plt
+import PIL.Image
+
+sys.path.append('../noncartesian_reconstruction')
+from generate_conditional import conditional_huen_sampler
 
 # Import the W&B Python Library 
 import wandb
@@ -168,6 +174,43 @@ def training_loop(
         done = (cur_nimg >= total_kimg * 1000)
         if (not done) and (cur_tick != 0) and (cur_nimg < tick_start_nimg + kimg_per_tick * 1000):
             continue
+
+        # Perform validation sampling
+        torch.cuda.empty_cache()
+        with torch.no_grad():
+            ddp.eval()
+            images, priors, labels = dataset_obj[0]
+            images = torch.Tensor(images).to(device).to(torch.float32)
+            priors = torch.Tensor(priors).to(device).to(torch.float32)
+            images = torch.unsqueeze(images,0)
+            priors = torch.unsqueeze(priors,0)
+            assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
+            latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
+            images = conditional_huen_sampler(ddp.module, latents, priors)
+                # Convert from complex to grayscale magnitude images
+            images_pha = images[:,1,:,:].cpu().numpy()
+            images_mag = images[:,0,:,:].cpu().numpy()
+            assert len(images_mag.shape)==3
+            assert len(images_pha.shape)==3
+            # Save images.
+            images_mag_batch = ((images_mag+1)*127.5).clip(0, 255).astype(np.uint8)
+            # cm = plt.get_cmap('twilight')
+            # images_pha = (cm((images_pha[0,:,:]+1)/2)*2)-1
+            images_pha_batch = ((images_pha+1)*127.5).clip(0, 255).astype(np.uint8)
+            os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
+            savename_mag = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_mag_recon.png'
+            savename_pha = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_pha_recon.png'
+            image_mag = images_mag_batch[0,:,:]
+            image_pha = images_pha_batch[0,:,:]
+            # image_pha = images_pha_batch[:,:,:]
+            if len(image_mag.shape) == 2:
+                PIL.Image.fromarray(image_mag[:, :], 'L').save(savename_mag)
+                PIL.Image.fromarray(image_pha, 'L').save(savename_pha)
+            else:
+                PIL.Image.fromarray(image_mag, 'RGB').save(savename_mag)
+                PIL.Image.fromarray(image_pha, 'RGB').save(savename_pha)
+            ddp.train()
+        
 
         # Print status line, accumulating the same information in training_stats.
         tick_end_time = time.time()
