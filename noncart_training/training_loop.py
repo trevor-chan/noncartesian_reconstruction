@@ -179,7 +179,7 @@ def training_loop(
         torch.cuda.empty_cache()
         with torch.no_grad():
             ddp.eval()
-            images, priors, labels = dataset_obj[0]
+            images, priors, labels = dataset_obj[10]
             images = torch.Tensor(images).to(device).to(torch.float32)
             priors = torch.Tensor(priors).to(device).to(torch.float32)
             images = torch.unsqueeze(images,0)
