@@ -2,6 +2,8 @@ import sigpy.mri
 from scipy.spatial import Voronoi, ConvexHull
 from fastkde.fastKDE import pdf,pdf_at_points
 import numpy as np
+import seaborn as sns
+import torch
 
 
 def generate_trajectory(matsize, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)):
@@ -38,12 +40,20 @@ def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
 
     return points
 
+#perform an interpolation dependent on sigpy nufft of the magnitude image
 def interpolate_values(points,kimage):
     assert kimage.dtype == 'complex64'
     # return sigpy.interpolate(kimage, points, kernel='spline', width=2, param=1)
     mag_image = np.abs(sigpy.ifft(kimage))
     return sigpy.nufft(mag_image, points)
 
+#perform a simple mapping, points are assigned values according to the value of their containing pixel in the discrete kspace image
+def map_values(points,kimage): 
+    assert kimage.dtype == 'complex64'
+    values = [kimage[int(point[0]),int(point[1])] for point in points]
+    return values
+
+# Calculate the voronoi volumes of points respectively
 def voronoi_volumes(points):
     v = Voronoi(points)
     vol = np.zeros(v.npoints)
@@ -84,7 +94,7 @@ def NUFFT_adjoint(points,values,matshape,alpha):
     image_2ch = sigpy.nufft_adjoint(values_c, points, oshape=matshape, oversamp=1)
     # image_2ch = np.flip(np.flip(image_2ch,axis=0),axis=1)
     # image_2ch = image_2ch[::-1,::-1]
-    return image_2ch
+    return image_2ch.astype(np.complex64)
 
 def adaptive_channelwise_normalization(channel_image,low=1,high=99,clipping=True):
     for ch in range(channel_image.shape[0]):
@@ -105,12 +115,26 @@ def adaptive_channelwise_normalization(channel_image,low=1,high=99,clipping=True
         #Necessary to find a way to compute a loss in image space that directly reflects differences in kspace? 
 def fixed_channelwise_normalization(channel_image,low=-0.001,high=0.001,clipping=False,realonly=True):
     for ch in range(channel_image.shape[0]):
+        if realonly and ch%2==1:
+            continue
         image = channel_image[ch,:,:]
         im_range=high-low
         channel_image[ch,:,:] = np.divide((image-low),im_range)*2-1
         if clipping:
             channel_image[ch,:,:] = np.clip(image, -1, 1)
-        if realonly:
-            break
     return channel_image
-    
+
+def plot_trajectory(points):
+    sns.set_palette('CMRmap')
+    sns.jointplot(x=points[:,0],y=points[:,1],marginal_kws=dict(bins=50),height=3, marker=".")
+    sns.jointplot(points,height=3,marker=".")
+
+# Perform RSS reconstruction on a pytorch tensor of shape batch, Channels/magphase(interspersed), H, W
+def root_summed_squares(array):
+    assert len(array.shape)==4, f'shape of the tensor to reconstruct should be (batch, channels/magphase(interspersed), H, W), got {array.shape}'
+    magnitude = array[:,::2,:,:]
+    phase = array[:,1::2,:,:]
+    channels = torch.count_nonzero(torch.count_nonzero(torch.sum(magnitude+1,dim=2), dim=2)).item()
+    magnitude_combined = torch.pow(torch.sum(torch.pow((magnitude+1)/2,2),dim=1)/channels,0.5)
+    phase_combined = torch.pow(torch.sum(torch.pow(phase,2),dim=1)/channels,0.5)
+    return magnitude_combined, phase_combined

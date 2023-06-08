@@ -34,6 +34,7 @@ class Dataset(torch.utils.data.Dataset):
         xflip       = False,    # Artificially double the size of the dataset via x-flips. Applied after max_size.
         random_seed = 0,        # Random seed to use when applying max_size.
         cache       = False,    # Cache images in CPU memory?
+        fetch_raw   = False,    # Return raw kspace data on call (used when sampling)
     ):
         self._name = name
         self._raw_shape = list(raw_shape)
@@ -42,6 +43,7 @@ class Dataset(torch.utils.data.Dataset):
         self._cached_images = dict() # {raw_idx: np.ndarray, ...}
         self._raw_labels = None
         self._label_shape = None
+        self.fetch_raw = fetch_raw
 
         # Apply max_size.
         self._raw_idx = np.arange(self._raw_shape[0], dtype=np.int64)
@@ -72,6 +74,9 @@ class Dataset(torch.utils.data.Dataset):
         pass
 
     def _load_raw_image(self, raw_idx): # to be overridden by subclass
+        raise NotImplementedError
+    
+    def _load_raw_kspace(self, raw_idx): # to be overridden by subclass
         raise NotImplementedError
 
     def _load_raw_labels(self): # to be overridden by subclass
@@ -121,7 +126,11 @@ class Dataset(torch.utils.data.Dataset):
             image = image[:, :, ::-1]
             prior = prior[:, :, ::-1]
             # prior_mag = prior_mag[:,:,::-1]
-        return image.copy(), prior.copy(), self.get_label(idx)
+
+        if self.fetch_raw:
+            return image.copy(), prior.copy(), self.get_label(idx), torch.tensor(self._load_raw_kspace(raw_idx)).flatten(start_dim=0,end_dim=1)
+        else:
+            return image.copy(), prior.copy(), self.get_label(idx)
 
     def get_label(self, idx):
         label = self._get_raw_labels()[self._raw_idx[idx]]
@@ -258,26 +267,34 @@ class NonCartesianDataset(Dataset):
                 print('ERROR - tried to load incompatible file type, requires float32 numpy array (.npy)')
                 return 0
         if kspace.ndim == 2:
-            kspace = kspace[:, :, np.newaxis] # HW => HWC
-        kspace = kspace.transpose(2, 0, 1) # HWC => CHW
+            kspace = kspace[:, :, np.newaxis, np.newaxis] # H,W => H,W,complex,channel
+        if kspace.ndim == 3: 
+            kspace = kspace[:, :, :, np.newaxis] # H,W,complex => H,W,complex,channel
+        kspace = kspace.transpose(3, 2, 0, 1) # H,W,complex,channel => channel,complex,H,W
         return kspace
     
     def complex_to_magphase(self, array_complex):
         array_mag = np.abs(array_complex).astype(np.float32)
         array_phase = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
-        return np.stack((array_mag,array_phase),axis=0)
 
+        magphase = np.empty((array_complex.shape[0]*2, array_complex.shape[1], array_complex.shape[2]), dtype=array_mag.dtype)
+        magphase[0::2,:,:] = array_mag
+        magphase[1::2,:,:] = array_phase
+        return magphase
 
     def _load_raw_image(self, raw_idx):
         kspace_2ch = self._load_raw_kspace(raw_idx)
-        kspace_complex = kspace_2ch[0,:,:]+kspace_2ch[1,:,:]*1j
-        image_complex = sigpy.ifft(kspace_complex)
+        image_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
+        prior_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
+        points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
 
-        points,alpha = generate_trajectory(kspace_complex.shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
-        values = interpolate_values(points,kspace_complex)
-        
-        prior_complex = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
-        prior_complex = prior_complex.astype(np.complex64)
+        for coil in range(kspace_2ch.shape[0]):
+            kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
+            image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
+            values = interpolate_values(points,kspace_complex) #for complicated interpolation
+            # values = map_values(points,kspace_complex) #for simple value mapping
+            prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
+
         image_2ch = self.complex_to_magphase(image_complex)
         prior_2ch = self.complex_to_magphase(prior_complex)
 

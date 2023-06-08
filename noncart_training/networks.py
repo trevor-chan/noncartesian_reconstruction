@@ -651,7 +651,7 @@ class EDMPrecond(torch.nn.Module):
         self.sigma_data = sigma_data
         #Edited to include priors as additional input channels ---------------------------------------------------
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels*2, out_channels=img_channels, label_dim=label_dim, **model_kwargs) 
-        #Don't forget to change the model summary input channel argument in training loop line ~80
+        #Don't forget to change the model summary input channel argument in training loop line ~99
         print('using EDMPrecond')
 
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):

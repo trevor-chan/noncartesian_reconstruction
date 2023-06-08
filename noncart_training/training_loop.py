@@ -22,6 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import matplotlib.pyplot as plt
 import PIL.Image
+from noncart_training.trajectory import *
 
 sys.path.append('../noncartesian_reconstruction')
 from generate_conditional import conditional_huen_sampler
@@ -59,7 +60,7 @@ def training_loop(
     run = wandb.init(
         project="noncartesian reconstruction",
         notes="prelim_experiments",
-        tags=["64x64","small_dataset","magnitude and phase"]
+        tags=["256x256","full_dataset","magnitude and phase","multicoil"]
     )
 
     wandb.config = {
@@ -186,26 +187,29 @@ def training_loop(
             priors = torch.unsqueeze(priors,0)
             assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
-            images = conditional_huen_sampler(ddp.module, latents, priors)
+            images = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents))
                 # Convert from complex to grayscale magnitude images
-            images_pha = images[:,1,:,:].cpu().numpy()
-            images_mag = images[:,0,:,:].cpu().numpy()
+            images_mag, images_pha = root_summed_squares(images)
+            images_mag = images_mag.cpu().numpy()
+            images_pha = images_pha.cpu().numpy()
+            
             assert len(images_mag.shape)==3
             assert len(images_pha.shape)==3
             # Save images.
-            images_mag_batch = ((images_mag+1)*127.5).clip(0, 255).astype(np.uint8)
+            images_mag_batch = (images_mag*255).clip(0, 255).astype(np.uint8)
             # cm = plt.get_cmap('twilight')
             # images_pha = (cm((images_pha[0,:,:]+1)/2)*2)-1
-            images_pha_batch = ((images_pha+1)*127.5).clip(0, 255).astype(np.uint8)
+            images_pha_batch = (images_pha*255).clip(0, 255).astype(np.uint8)
             os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
             savename_mag = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_mag_recon.png'
             savename_pha = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_pha_recon.png'
             image_mag = images_mag_batch[0,:,:]
             image_pha = images_pha_batch[0,:,:]
-            # image_pha = images_pha_batch[:,:,:]
             if len(image_mag.shape) == 2:
-                PIL.Image.fromarray(image_mag[:, :], 'L').save(savename_mag)
-                PIL.Image.fromarray(image_pha, 'L').save(savename_pha)
+                image_mag_pil = PIL.Image.fromarray(image_mag[:, :], 'L')
+                image_mag_pil.save(savename_mag)
+                image_pha_pil = PIL.Image.fromarray(image_pha, 'L')
+                image_pha_pil.save(savename_pha)
             else:
                 PIL.Image.fromarray(image_mag, 'RGB').save(savename_mag)
                 PIL.Image.fromarray(image_pha, 'RGB').save(savename_pha)
@@ -227,12 +231,14 @@ def training_loop(
         torch.cuda.reset_peak_memory_stats()
         dist.print0(' '.join(fields))
 
-        # wandb logging:
+        # wandb logging:          
         wandb.log({"loss_mean": torch.mean(loss),
                    "loss_stdv": torch.std(loss),
                    "loss_magnitude": torch.mean(loss_mag),
                    "loss_phase": torch.mean(loss_phase),
-                   "loss": loss})
+                   "loss": loss,
+                   "magnitude_images": wandb.Image(image_mag_pil),
+                   "phase_images": wandb.Image(image_pha_pil)})
 
         # Check for abort.
         if (not done) and dist.should_stop():
