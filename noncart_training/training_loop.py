@@ -181,11 +181,19 @@ def training_loop(
         with torch.no_grad():
             ddp.eval()
             images, priors, labels = dataset_obj[10]
-            images = torch.Tensor(images).to(device).to(torch.float32)
+            images = torch.Tensor(images).to(torch.float32)
             priors = torch.Tensor(priors).to(device).to(torch.float32)
             images = torch.unsqueeze(images,0)
             priors = torch.unsqueeze(priors,0)
             assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
+
+            gt_image_mag, gt_image_pha = root_summed_squares(images)
+            gt_image_mag = (gt_image_mag.numpy()*255).clip(0, 255).astype(np.uint8)
+            gt_image_pha = (gt_image_pha.numpy()*255).clip(0, 255).astype(np.uint8)
+            prior_image_mag, prior_image_pha = root_summed_squares(priors)
+            prior_image_mag = (prior_image_mag.cpu().numpy()*255).clip(0, 255).astype(np.uint8)
+            prior_image_pha = (prior_image_pha.cpu().numpy()*255).clip(0, 255).astype(np.uint8)
+
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
             images = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents))
                 # Convert from complex to grayscale magnitude images
@@ -231,14 +239,17 @@ def training_loop(
         torch.cuda.reset_peak_memory_stats()
         dist.print0(' '.join(fields))
 
+        image_to_save_mag = PIL.Image.fromarray(np.concatenate((gt_image_mag, prior_image_mag, images_mag_batch),axis=2)[0,:,:],'L')
+        image_to_save_pha = PIL.Image.fromarray(np.concatenate((gt_image_pha, prior_image_pha, images_pha_batch),axis=2)[0,:,:],'L')
+        
         # wandb logging:          
         wandb.log({"loss_mean": torch.mean(loss),
                    "loss_stdv": torch.std(loss),
                    "loss_magnitude": torch.mean(loss_mag),
                    "loss_phase": torch.mean(loss_phase),
                    "loss": loss,
-                   "magnitude_images": wandb.Image(image_mag_pil),
-                   "phase_images": wandb.Image(image_pha_pil)})
+                   "magnitude_images": wandb.Image(image_to_save_mag),
+                   "phase_images": wandb.Image(image_to_save_pha)})
 
         # Check for abort.
         if (not done) and dist.should_stop():
