@@ -53,6 +53,9 @@ def parse_int_list(s):
 @click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm']), default='ddpmpp', show_default=True)
 @click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['vp', 've', 'edm']), default='edm', show_default=True)
 
+# Trajectory Parameters.
+@click.option('--undersampling', help='undersampling_ratio', metavar='FLOAT',                       type=click.FloatRange(min=0, max=2), default=1, show_default=True)
+
 # Hyperparameters.
 @click.option('--duration',      help='Training duration', metavar='MIMG',                          type=click.FloatRange(min=0, min_open=True), default=200, show_default=True)
 @click.option('--batch',         help='Total batch size', metavar='INT',                            type=click.IntRange(min=1), default=512, show_default=True)
@@ -100,7 +103,7 @@ def main(**kwargs):
 
     # Initialize config dict.
     c = dnnlib.EasyDict()
-    c.dataset_kwargs = dnnlib.EasyDict(class_name='noncart_training.dataset.NonCartesianDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache)
+    c.dataset_kwargs = dnnlib.EasyDict(class_name='noncart_training.dataset.NonCartesianDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, undersampling=opts.undersampling)
     c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=opts.workers, prefetch_factor=2)
     c.network_kwargs = dnnlib.EasyDict()
     c.loss_kwargs = dnnlib.EasyDict()

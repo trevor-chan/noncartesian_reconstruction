@@ -195,14 +195,20 @@ class Dataset(torch.utils.data.Dataset):
 
 class NonCartesianDataset(Dataset):
     def __init__(self,
-        path,                   # Path to directory or zip.
-        resolution      = None, # Ensure specific resolution, None = highest available.
-        use_pyspng      = True, # Use pyspng if available?
-        **super_kwargs,         # Additional arguments for the Dataset base class.
+        path,                           # Path to directory or zip.
+        resolution      = None,         # Ensure specific resolution, None = highest available.
+        use_pyspng      = True,         # Use pyspng if available?
+        undersampling   = 1,            # Undersampling ratio
+        interleaves     = (1,8),        # Interleaves
+        alpha_range     = (1,4),        # Alpha range
+        **super_kwargs,                 # Additional arguments for the Dataset base class.
     ):
         self._path = path
         self._use_pyspng = use_pyspng
         self._zipfile = None
+        self.undersampling = undersampling
+        self.interleaves = interleaves
+        self.alpha_range = alpha_range
 
         if os.path.isdir(self._path):
             self._type = 'dir'
@@ -286,7 +292,7 @@ class NonCartesianDataset(Dataset):
         kspace_2ch = self._load_raw_kspace(raw_idx)
         image_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
         prior_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
-        points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
+        points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = self.interleaves, undersampling = self.undersampling, alpha_range = self.alpha_range) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
 
         for coil in range(kspace_2ch.shape[0]):
             kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j

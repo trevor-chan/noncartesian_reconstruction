@@ -64,7 +64,8 @@ def training_loop(
     )
 
     wandb.config = {
-        "batch_size": batch_size
+        "batch_size": batch_size,
+        "undersampling": dataset_kwargs.undersampling,
     }
     
     # Initialize.
