@@ -41,7 +41,7 @@ def process_h5_singlecoil(filepath,outshape=(256,256),sampling_ratio=(2,1),saved
                 with open(savepath, 'wb') as f:
                     np.save(f, array)
 
-def process_h5_multicoil(filepath,outshape=(64,64),sampling_ratio=(2,1),savedir='data_64_multicoil', max_channels = 24):
+def process_h5_multicoil(filepath,outshape=(128,128),sampling_ratio=(2,1),savedir='data_128_multicoil', max_channels = 20):
     print(filepath)
     if savedir is None:
         savedir = os.path.split(filepath)[0]

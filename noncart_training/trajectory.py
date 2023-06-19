@@ -134,7 +134,7 @@ def root_summed_squares(array):
     assert len(array.shape)==4, f'shape of the tensor to reconstruct should be (batch, channels/magphase(interspersed), H, W), got {array.shape}'
     magnitude = array[:,::2,:,:]
     phase = array[:,1::2,:,:]
-    channels = torch.count_nonzero(torch.count_nonzero(torch.sum(magnitude+1,dim=2), dim=2)).item()
-    magnitude_combined = torch.pow(torch.sum(torch.pow((magnitude+1)/2,2),dim=1)/channels,0.5)
-    phase_combined = torch.pow(torch.sum(torch.pow(phase,2),dim=1)/channels,0.5)
+    # channels = torch.count_nonzero(torch.count_nonzero(torch.sum(magnitude+1,dim=2), dim=2)).item()
+    magnitude_combined = torch.pow(torch.sum(torch.pow((magnitude+1)/2,2),dim=1),0.5)
+    phase_combined = torch.pow(torch.sum(torch.pow(phase,2),dim=1),0.5)
     return magnitude_combined, phase_combined
