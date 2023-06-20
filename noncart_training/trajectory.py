@@ -34,8 +34,8 @@ def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
                             max_slew_rate)
 
     points = np.asarray([i for i in points if -matsize[0]/2<=i[0]<=matsize[0]/2 and -matsize[1]/2<=i[1]<=matsize[1]/2]) #trim excess
-    information_ratio = points.shape[0] / (matsize[0]*matsize[1]) #recalculate the new information sampling
-
+    
+    # information_ratio = points.shape[0] / (matsize[0]*matsize[1]) #recalculate the new information sampling
     # print('information_ratio: {}'.format(information_ratio))
 
     return points
@@ -113,6 +113,7 @@ def adaptive_channelwise_normalization(channel_image,low=1,high=99,clipping=True
         #Doesn't make sense to perform convolutions in kspace
         #But also we want to compute a loss in kspace
         #Necessary to find a way to compute a loss in image space that directly reflects differences in kspace? 
+
 def fixed_channelwise_normalization(channel_image,low=-0.001,high=0.001,clipping=False,realonly=True):
     for ch in range(channel_image.shape[0]):
         if realonly and ch%2==1:
@@ -134,7 +135,7 @@ def root_summed_squares(array):
     assert len(array.shape)==4, f'shape of the tensor to reconstruct should be (batch, channels/magphase(interspersed), H, W), got {array.shape}'
     magnitude = array[:,::2,:,:]
     phase = array[:,1::2,:,:]
-    # channels = torch.count_nonzero(torch.count_nonzero(torch.sum(magnitude+1,dim=2), dim=2)).item()
-    magnitude_combined = torch.pow(torch.sum(torch.pow((magnitude+1)/2,2),dim=1),0.5)
-    phase_combined = torch.pow(torch.sum(torch.pow(phase,2),dim=1),0.5)
+    channels = torch.count_nonzero(torch.count_nonzero(torch.sum(magnitude+1,dim=2), dim=2)).item()
+    magnitude_combined = torch.pow(torch.sum(torch.pow((magnitude+1)/2,2),dim=1)/channels,0.5)
+    phase_combined = torch.pow(torch.sum(torch.pow(phase,2),dim=1)/channels,0.5)
     return magnitude_combined, phase_combined

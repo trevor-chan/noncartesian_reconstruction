@@ -147,10 +147,10 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 images, priors, labels = next(dataset_iterator) #get images and image priors separately from the dataset, also fetch labels
-                images = images.to(device).to(torch.float32)
-                priors = priors.to(device).to(torch.float32)
-                # prior_mags = prior_mags.to(device).to(torch.float32)
+                images = images.to(device)
+                priors = priors.to(device)
                 labels = labels.to(device)
+
                 loss, loss_mag, loss_phase = loss_fn(net=ddp, images=images, priors=priors, labels=labels, augment_pipe=augment_pipe) #currently calls ConditionalEDMLoss only
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()

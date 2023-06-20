@@ -107,30 +107,27 @@ class Dataset(torch.utils.data.Dataset):
         raw_data = self._load_raw_image(raw_idx)
         image = raw_data[0]
         prior = raw_data[1]
-        # prior_mag = np.expand_dims(raw_data[2][0,:,:], axis=0)
+
         assert isinstance(image, np.ndarray)
         assert isinstance(prior, np.ndarray)
-        # assert isinstance(prior_mag, np.ndarray)
 
-        assert image.shape == tuple(self.image_shape), f'{image.shape} , {tuple(self.image_shape)}'
-        assert prior.shape == tuple(self.image_shape), f'{prior.shape} , {tuple(self.image_shape)}'
+        # assert image.shape == tuple(self.image_shape), f'{image.shape} , {tuple(self.image_shape)}'
+        # assert prior.shape == tuple(self.image_shape), f'{prior.shape} , {tuple(self.image_shape)}'
 
         assert image.dtype == np.float32
         assert prior.dtype == np.float32
-        # assert prior_mag.dtype == np.float32
 
         if self._xflip[idx]:
             assert image.ndim == 3 # CHW
             assert prior.ndim == 3 # CHW
-            # assert prior_mag.ndim ==3 # CHW
+
             image = image[:, :, ::-1]
             prior = prior[:, :, ::-1]
-            # prior_mag = prior_mag[:,:,::-1]
 
         if self.fetch_raw:
-            return image.copy(), prior.copy(), self.get_label(idx), torch.tensor(self._load_raw_kspace(raw_idx)).flatten(start_dim=0,end_dim=1)
+            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx), torch.tensor(self._load_raw_kspace(raw_idx)).flatten(start_dim=0,end_dim=1)
         else:
-            return image.copy(), prior.copy(), self.get_label(idx)
+            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx)
 
     def get_label(self, idx):
         label = self._get_raw_labels()[self._raw_idx[idx]]
@@ -280,38 +277,33 @@ class NonCartesianDataset(Dataset):
         return kspace
     
     def complex_to_magphase(self, array_complex):
-        array_mag = np.abs(array_complex).astype(np.float32)
-        array_phase = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
-
-        magphase = np.empty((array_complex.shape[0]*2, array_complex.shape[1], array_complex.shape[2]), dtype=array_mag.dtype)
-        magphase[0::2,:,:] = array_mag
-        magphase[1::2,:,:] = array_phase
+        magphase = np.empty((array_complex.shape[0]*2, array_complex.shape[1], array_complex.shape[2]), dtype = np.float32)
+        magphase[0::2,:,:] = np.abs(array_complex).astype(np.float32)
+        magphase[1::2,:,:] = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
         return magphase
 
     def _load_raw_image(self, raw_idx):
         kspace_2ch = self._load_raw_kspace(raw_idx)
         image_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
         prior_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
-        points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = self.interleaves, undersampling = self.undersampling, alpha_range = self.alpha_range) # FIXED TRAJECTORY AT ~1.0 INFORMATION RATIO
+        points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = self.interleaves, undersampling = self.undersampling, alpha_range = self.alpha_range)
 
         for coil in range(kspace_2ch.shape[0]):
             kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
-            image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
             values = interpolate_values(points,kspace_complex) #for complicated interpolation
             # values = map_values(points,kspace_complex) #for simple value mapping
             prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
+            image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
+        del kspace_2ch
+        del points
 
         image_2ch = self.complex_to_magphase(image_complex)
+        del image_complex
         prior_2ch = self.complex_to_magphase(prior_complex)
+        del prior_complex
 
-        image_2ch = fixed_channelwise_normalization(image_2ch,  low=0,high=0.001,clipping=False, realonly=True)
-        prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.01,clipping=False, realonly=True)
-        
-        # PIL.Image.fromarray((prior_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_mag_{}.png'.format(raw_idx))
-        # PIL.Image.fromarray((prior_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_pha_{}.png'.format(raw_idx))
-        # PIL.Image.fromarray((image_2ch[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_mag_{}.png'.format(raw_idx))
-        # PIL.Image.fromarray((image_2ch[1,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/image_pha_{}.png'.format(raw_idx))
-        # PIL.Image.fromarray((prior_mag[0,:,:]*127.5+127.5).astype(np.uint8),'L').save('out/prior_magnitude_{}.png'.format(raw_idx))
+        image_2ch = fixed_channelwise_normalization(image_2ch,  low=0,high=0.0002,clipping=False, realonly=True)
+        prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.002,clipping=False, realonly=True)
 
         return np.stack((image_2ch, prior_2ch),axis=0)
 
