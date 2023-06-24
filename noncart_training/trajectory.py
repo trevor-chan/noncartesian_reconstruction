@@ -120,7 +120,10 @@ def fixed_channelwise_normalization(channel_image,low=-0.001,high=0.001,clipping
             continue
         image = channel_image[ch,:,:]
         im_range=high-low
-        channel_image[ch,:,:] = np.divide((image-low),im_range)*2-1
+        channel_image[ch,:,:] = np.divide((image-low),im_range) * 2
+        channel_image[ch,:,:] -= 1
+        # image_range = (np.amax(channel_image[ch,:,:]) - np.amin(channel_image[ch,:,:]))
+        # channel_image[ch,:,:] = channel_image[ch,:,:] - image_range / 2
         if clipping:
             channel_image[ch,:,:] = np.clip(image, -1, 1)
     return channel_image
