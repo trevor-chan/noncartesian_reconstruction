@@ -303,7 +303,7 @@ class NonCartesianDataset(Dataset):
         del prior_complex
 
         image_2ch = fixed_channelwise_normalization(image_2ch,  low=0,high=0.0025,clipping=False, realonly=True)
-        prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.05,clipping=False, realonly=True)
+        prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.025,clipping=False, realonly=True)
 
         return np.stack((image_2ch, prior_2ch),axis=0)
 

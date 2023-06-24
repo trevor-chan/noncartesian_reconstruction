@@ -181,7 +181,7 @@ def training_loop(
         torch.cuda.empty_cache()
         with torch.no_grad():
             ddp.eval()
-            images, priors, labels = dataset_obj[10]
+            images, priors, labels = dataset_obj[14154]
             images = torch.Tensor(images).to(torch.float32)
             priors = torch.Tensor(priors).to(device).to(torch.float32)
             images = torch.unsqueeze(images,0)
@@ -189,9 +189,14 @@ def training_loop(
             assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
 
             gt_image_mag, gt_image_pha = root_summed_squares(images)
+
             gt_image_mag = (gt_image_mag.numpy()*255).clip(0, 255).astype(np.uint8)
             gt_image_pha = (gt_image_pha.numpy()*255).clip(0, 255).astype(np.uint8)
+
+            print(np.amax(gt_image_mag))
+
             prior_image_mag, prior_image_pha = root_summed_squares(priors)
+
             prior_image_mag = (prior_image_mag.cpu().numpy()*255).clip(0, 255).astype(np.uint8)
             prior_image_pha = (prior_image_pha.cpu().numpy()*255).clip(0, 255).astype(np.uint8)
 
@@ -206,8 +211,6 @@ def training_loop(
             assert len(images_pha.shape)==3
             # Save images.
             images_mag_batch = (images_mag*255).clip(0, 255).astype(np.uint8)
-            # cm = plt.get_cmap('twilight')
-            # images_pha = (cm((images_pha[0,:,:]+1)/2)*2)-1
             images_pha_batch = (images_pha*255).clip(0, 255).astype(np.uint8)
             os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
             savename_mag = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_mag_recon.png'
