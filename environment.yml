@@ -14,6 +14,11 @@ dependencies:
   - requests
   - tqdm
   - imageio
+  - tqdm
+  - seaborn
+  - matplotlib
   - pip:
     - imageio-ffmpeg>=0.4.3
     - pyspng
+    - wandb
+    - sigpy
