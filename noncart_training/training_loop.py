@@ -193,8 +193,6 @@ def training_loop(
             gt_image_mag = (gt_image_mag.numpy()*255).clip(0, 255).astype(np.uint8)
             gt_image_pha = (gt_image_pha.numpy()*255).clip(0, 255).astype(np.uint8)
 
-            print(np.amax(gt_image_mag))
-
             prior_image_mag, prior_image_pha = root_summed_squares(priors)
 
             prior_image_mag = (prior_image_mag.cpu().numpy()*255).clip(0, 255).astype(np.uint8)

@@ -31,6 +31,7 @@ def conditional_huen_sampler(
     net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
     num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+    to_yield=False,
 ):
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
@@ -78,6 +79,9 @@ def conditional_huen_sampler(
             denoised = net(x_in, t_next, class_labels).to(torch.float64)
             d_prime = (x_next - denoised) / t_next
             x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+        
+        if to_yield:
+            yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
 
     return x_next
 
@@ -87,7 +91,7 @@ def kspace_gradient_sampler(
     net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
     num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
-    gradient_strength = 0.05
+    guidance = 0.00001, to_yield=False
 ):
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
@@ -103,12 +107,10 @@ def kspace_gradient_sampler(
     priors = priors.to(torch.float64)
     x_next = latents.to(torch.float64) * t_steps[0]
 
-    prior_copy = np.array(priors[0].cpu())
-    x_next_copy = np.array(x_next[0].cpu())
-
-    # PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
-    # PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
-
+    # compute discrete complex kspace matrix
+    k_complex = kspace[:,::2] + kspace[:,1::2]*1j
+    
+    
 
     for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
         x_cur = x_next
@@ -137,8 +139,26 @@ def kspace_gradient_sampler(
             x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
 
         # Calculate frequency space gradient
-        
+        x_next_complex = x_next[:,::2] * (torch.cos(x_next[:,1::2]*torch.pi) + torch.sin(x_next[:,1::2]*torch.pi) * 1j)
+        k_next_complex = torch.fft.fft2(x_next_complex)
 
+        # k_next = torch.cat((torch.zeros_like(k_next_complex),torch.zeros_like(k_next_complex)), dim=1)
+        # k_next[:,::2] = k_next_complex.real
+        # k_next[:,1::2] = k_next_complex.imag
+
+        k_gradient_complex = k_complex-k_next_complex
+        k_gradient_complex[k_complex==0+0j]=0+0j
+
+        x_gradient_complex = torch.fft.fftshift(torch.fft.ifft2(k_gradient_complex))
+        x_gradient = torch.cat((torch.zeros_like(x_gradient_complex),torch.zeros_like(x_gradient_complex)), dim=1).to(torch.float32)
+        x_gradient[:,::2] = torch.abs(x_gradient_complex).to(torch.float32)
+        x_gradient[:,1::2] = (torch.angle(x_gradient_complex)/torch.pi).to(torch.float32)
+
+        x_next = x_next + x_gradient * guidance
+
+        if to_yield:
+            yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next,
+                                  k_gradient_complex=k_gradient_complex, x_gradient=x_gradient)
 
     return x_next
 

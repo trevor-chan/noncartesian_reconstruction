@@ -108,16 +108,18 @@ class Dataset(torch.utils.data.Dataset):
         image = raw_data[0]
         prior = raw_data[1]
 
+        if self.fetch_raw:
+            kspace_raw = raw_data[2]
+            assert isinstance(kspace_raw, np.ndarray)
+
         assert isinstance(image, np.ndarray)
         assert isinstance(prior, np.ndarray)
-
-        # assert image.shape == tuple(self.image_shape), f'{image.shape} , {tuple(self.image_shape)}'
-        # assert prior.shape == tuple(self.image_shape), f'{prior.shape} , {tuple(self.image_shape)}'
 
         assert image.dtype == np.float32
         assert prior.dtype == np.float32
 
         if self._xflip[idx]:
+            assert self.fetch_raw == False, "mirroring not enabled when raw kspace is required"
             assert image.ndim == 3 # CHW
             assert prior.ndim == 3 # CHW
 
@@ -125,7 +127,7 @@ class Dataset(torch.utils.data.Dataset):
             prior = prior[:, :, ::-1]
 
         if self.fetch_raw:
-            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx), torch.tensor(self._load_raw_kspace(raw_idx)).flatten(start_dim=0,end_dim=1)
+            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx), torch.tensor(kspace_raw).to(torch.float32)
         else:
             return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx)
 
@@ -206,6 +208,7 @@ class NonCartesianDataset(Dataset):
         self.undersampling = undersampling
         self.interleaves = interleaves
         self.alpha_range = alpha_range
+        self.fetch_raw = super_kwargs['fetch_raw']
 
         if os.path.isdir(self._path):
             self._type = 'dir'
@@ -288,14 +291,27 @@ class NonCartesianDataset(Dataset):
         prior_complex = np.zeros((kspace_2ch.shape[0],kspace_2ch.shape[2],kspace_2ch.shape[3]),dtype=np.complex64)
         points,alpha = generate_trajectory(kspace_2ch[0,0,:,:].shape, interleave_range = self.interleaves, undersampling = self.undersampling, alpha_range = self.alpha_range)
 
-        for coil in range(kspace_2ch.shape[0]):
-            kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
-            values = interpolate_values(points,kspace_complex) #for complicated interpolation
-            # values = map_values(points,kspace_complex) #for simple value mapping
-            prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
-            image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
-        del kspace_2ch
-        del points
+        if self.fetch_raw:
+            channel_values = []
+            for coil in range(kspace_2ch.shape[0]):
+                kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
+                values = interpolate_values(points,kspace_complex) #for complicated interpolation
+                channel_values.append(np.array(values))
+                # values = map_values(points,kspace_complex) #for simple value mapping
+                prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
+                image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
+            channel_values = [np.stack((val.real,val.imag)) for val in channel_values]
+            channel_values = np.concatenate(channel_values, axis=0)
+            del kspace_2ch
+        else:
+            for coil in range(kspace_2ch.shape[0]):
+                kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
+                values = interpolate_values(points,kspace_complex) #for complicated interpolation
+                # values = map_values(points,kspace_complex) #for simple value mapping
+                prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
+                image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
+            del kspace_2ch
+            del points
 
         image_2ch = self.complex_to_magphase(image_complex)
         del image_complex
@@ -305,7 +321,18 @@ class NonCartesianDataset(Dataset):
         image_2ch = fixed_channelwise_normalization(image_2ch,  low=0,high=0.0025,clipping=False, realonly=True)
         prior_2ch = fixed_channelwise_normalization(prior_2ch,  low=0,high=0.025,clipping=False, realonly=True)
 
-        return np.stack((image_2ch, prior_2ch),axis=0)
+        if self.fetch_raw:
+            kspace_raw = np.zeros_like(image_2ch)
+            repeats = np.zeros(image_2ch[0,:,:].shape)
+            for i in range(points.shape[0]):
+                kspace_raw[:,int(points[i,0]),int(points[i,1])] = channel_values[:,i]
+                repeats[int(points[i,0]),int(points[i,1])] += 1
+            repeats[repeats==0] = 1 # prevents divide by zero error
+            kspace_raw = kspace_raw / np.tile(repeats, (image_2ch.shape[0],1,1))
+            kspace_raw = kspace_raw.astype(np.float32)
+            return np.stack((image_2ch, prior_2ch, kspace_raw),axis=0)
+        else:
+            return np.stack((image_2ch, prior_2ch),axis=0)
 
     def _load_raw_labels(self):
         fname = 'dataset.json'
