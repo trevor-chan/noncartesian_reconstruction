@@ -199,8 +199,9 @@ def training_loop(
             prior_image_pha = (prior_image_pha.cpu().numpy()*255).clip(0, 255).astype(np.uint8)
 
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
-            images = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents))
-                # Convert from complex to grayscale magnitude images
+            images = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents), to_yield=False)
+
+            # Convert from complex to grayscale magnitude images
             images_mag, images_pha = root_summed_squares(images)
             images_mag = images_mag.cpu().numpy()
             images_pha = images_pha.cpu().numpy()

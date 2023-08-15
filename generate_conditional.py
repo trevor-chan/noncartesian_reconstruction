@@ -33,6 +33,137 @@ def conditional_huen_sampler(
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
     to_yield=False,
 ):
+    
+    def chs(
+        net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+        num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+        S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+        to_yield=False,
+    ):
+        # Adjust noise levels based on what's supported by the network.
+        sigma_min = max(sigma_min, net.sigma_min)
+        sigma_max = min(sigma_max, net.sigma_max)
+
+        # Time step discretization.
+        step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
+        t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
+        t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])]) # t_N = 0
+
+        # Main sampling loop.
+        assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
+        priors = priors.to(torch.float64)
+        x_next = latents.to(torch.float64) * t_steps[0]
+
+        prior_copy = np.array(priors[0].cpu())
+        x_next_copy = np.array(x_next[0].cpu())
+
+        # PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
+        # PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
+
+
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+            x_cur = x_next
+
+            # Increase noise temporarily.
+            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
+            t_hat = net.round_sigma(t_cur + gamma * t_cur)
+            x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+
+            #Concatenate x_hat and priors (undersampled 2ch images) for first forward pass
+            
+            x_in = torch.cat((x_hat, priors), dim=1)
+
+            # Euler step.
+            denoised = net(x_in, t_hat, class_labels).to(torch.float64)
+            d_cur = (x_hat - denoised) / t_hat
+            x_next = x_hat + (t_next - t_hat) * d_cur
+
+            # Apply 2nd order correction.
+            if i < num_steps - 1:
+                #Concatenate x_hat and priors (undersampled 2ch images) for forward pass
+                x_in = torch.cat((x_next, priors), dim=1)
+
+                denoised = net(x_in, t_next, class_labels).to(torch.float64)
+                d_prime = (x_next - denoised) / t_next
+                x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+
+        print(type(x_next))
+        return x_next
+
+    def chs_yield(
+        net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+        num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+        S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+        to_yield=False,
+    ):
+        # Adjust noise levels based on what's supported by the network.
+        sigma_min = max(sigma_min, net.sigma_min)
+        sigma_max = min(sigma_max, net.sigma_max)
+
+        # Time step discretization.
+        step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
+        t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
+        t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])]) # t_N = 0
+
+        # Main sampling loop.
+        assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
+        priors = priors.to(torch.float64)
+        x_next = latents.to(torch.float64) * t_steps[0]
+
+        prior_copy = np.array(priors[0].cpu())
+        x_next_copy = np.array(x_next[0].cpu())
+
+        # PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
+        # PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
+
+
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+            x_cur = x_next
+
+            # Increase noise temporarily.
+            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
+            t_hat = net.round_sigma(t_cur + gamma * t_cur)
+            x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+
+            #Concatenate x_hat and priors (undersampled 2ch images) for first forward pass
+            
+            x_in = torch.cat((x_hat, priors), dim=1)
+
+            # Euler step.
+            denoised = net(x_in, t_hat, class_labels).to(torch.float64)
+            d_cur = (x_hat - denoised) / t_hat
+            x_next = x_hat + (t_next - t_hat) * d_cur
+
+            # Apply 2nd order correction.
+            if i < num_steps - 1:
+                #Concatenate x_hat and priors (undersampled 2ch images) for forward pass
+                x_in = torch.cat((x_next, priors), dim=1)
+
+                denoised = net(x_in, t_next, class_labels).to(torch.float64)
+                d_prime = (x_next - denoised) / t_next
+                x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+            
+            if to_yield:
+                yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
+
+        print(type(x_next))
+        return x_next
+    
+    if to_yield:
+        return chs_yield(net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+                         num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+                         S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,)
+    else:
+        return chs(net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+                   num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+                   S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,)
+
+def chs(
+    net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+    num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+    to_yield=False,
+):
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
     sigma_max = min(sigma_max, net.sigma_max)
@@ -83,6 +214,66 @@ def conditional_huen_sampler(
         if to_yield:
             yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
 
+    print(type(x_next))
+    return x_next
+
+def chs_yield(
+    net, latents, priors, kspace, class_labels=None, randn_like=torch.randn_like,
+    num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+    to_yield=False,
+):
+    # Adjust noise levels based on what's supported by the network.
+    sigma_min = max(sigma_min, net.sigma_min)
+    sigma_max = min(sigma_max, net.sigma_max)
+
+    # Time step discretization.
+    step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
+    t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
+    t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])]) # t_N = 0
+
+    # Main sampling loop.
+    assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
+    priors = priors.to(torch.float64)
+    x_next = latents.to(torch.float64) * t_steps[0]
+
+    prior_copy = np.array(priors[0].cpu())
+    x_next_copy = np.array(x_next[0].cpu())
+
+    # PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
+    # PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
+
+
+    for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+        x_cur = x_next
+
+        # Increase noise temporarily.
+        gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
+        t_hat = net.round_sigma(t_cur + gamma * t_cur)
+        x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+
+        #Concatenate x_hat and priors (undersampled 2ch images) for first forward pass
+        
+        x_in = torch.cat((x_hat, priors), dim=1)
+
+        # Euler step.
+        denoised = net(x_in, t_hat, class_labels).to(torch.float64)
+        d_cur = (x_hat - denoised) / t_hat
+        x_next = x_hat + (t_next - t_hat) * d_cur
+
+        # Apply 2nd order correction.
+        if i < num_steps - 1:
+            #Concatenate x_hat and priors (undersampled 2ch images) for forward pass
+            x_in = torch.cat((x_next, priors), dim=1)
+
+            denoised = net(x_in, t_next, class_labels).to(torch.float64)
+            d_prime = (x_next - denoised) / t_next
+            x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+        
+        if to_yield:
+            yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
+
+    print(type(x_next))
     return x_next
 
 
