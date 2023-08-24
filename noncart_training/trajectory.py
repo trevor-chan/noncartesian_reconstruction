@@ -41,11 +41,16 @@ def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
     return points
 
 #perform an interpolation dependent on sigpy nufft of the magnitude image
-def interpolate_values(points,kimage):
+def interpolate_values_magnufft(points,kimage):
     assert kimage.dtype == 'complex64'
-    # return sigpy.interpolate(kimage, points, kernel='spline', width=2, param=1)
     mag_image = np.abs(sigpy.ifft(kimage))
     return sigpy.nufft(mag_image, points)
+
+#perform an interpolation in kspace
+def interpolate_values(points,kimage, width=2):
+    assert kimage.dtype == 'complex64'
+    kimage = np.fft.fftshift(kimage)
+    return sigpy.interpolate(kimage, points, kernel='kaiser_bessel', width=width)
 
 #perform a simple mapping, points are assigned values according to the value of their containing pixel in the discrete kspace image
 def map_values(points,kimage): 
@@ -82,8 +87,6 @@ def fast_density_correction(points,values,alpha,scalefactor=0.5): #Adaptive corr
     values_c = values.copy()
     return values_c * np.power(np.power(points[:,0],2) + np.power(points[:,1],2), (1-5**(1-alpha))/2 ) #Likewise empirically determined to give the best quality results, though subject to change
 
-
-
 def kde_density_correction(points,values):   #extremely slow, no improvement
     values_c = values.copy()
     densities = get_pdf_at_points(points)
@@ -91,10 +94,36 @@ def kde_density_correction(points,values):   #extremely slow, no improvement
 
 def NUFFT_adjoint(points,values,matshape,alpha):
     values_c = fast_density_correction(points,values,alpha)
-    image_2ch = sigpy.nufft_adjoint(values_c, points, oshape=matshape, oversamp=1)
+    image_complex = sigpy.nufft_adjoint(values_c, points, oshape=matshape, oversamp=1, width=4)
     # image_2ch = np.flip(np.flip(image_2ch,axis=0),axis=1)
     # image_2ch = image_2ch[::-1,::-1]
-    return image_2ch.astype(np.complex64)
+    return image_complex.astype(np.complex64)
+
+def NUFFT_adjoint_multicoil(points,values,matshape,alpha):
+    values_c = fast_density_correction(points,values,alpha)
+    coils = values_c.shape[0]
+    points = np.tile(points,(coils,1,1))
+    image_complex = np.zeros((coils, matshape[0], matshape[1]), dtype=np.complex64)
+    for i in range(coils):
+        image_complex[i] = sigpy.nufft_adjoint(values_c[i], points[i], oshape=matshape, oversamp=1, width=4).astype(np.complex64)
+    return image_complex
+
+def NUFFT(array, points):
+    # Array should be in form batch, (magnitude/phase interspersed), width, height
+    array = np.array(array.cpu(), dtype=np.float32)
+    # array = array[0,::2,:,:] + array[0,1::2,:,:] * 1j
+    array = array[0,::2] * (np.cos(array[0,1::2]*np.pi) + np.sin(array[0,1::2]*np.pi) * 1j)
+
+    points = np.array(points, dtype=np.float32)
+    values_complex = np.transpose(sigpy.nufft(array, points, oversamp=1, width=4),(1,0,2))
+    # outshape = list(values_complex.shape)
+    # outshape[1] *= 2
+    # values_2ch = np.zeros(outshape)
+    # values_2ch[:,::2,:] = values_complex.real
+    # values_2ch[:,1::2,:] = values_complex.imag
+    # return values_2ch
+    return values_complex
+
 
 def adaptive_channelwise_normalization(channel_image,low=1,high=99,clipping=True):
     for ch in range(channel_image.shape[0]):

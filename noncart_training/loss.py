@@ -104,7 +104,7 @@ class ConditionalEDMLoss:
     #     return angular_dist
     
     # Function to calculate the loss as a weighted sum of magnitude[MSE of magnitude images] and phase[the sum of horizontal and vertical component distance between two phase images]
-    def loss_condition(self, yn, y, weight):
+    def loss_condition(self, yn, y, weight, magphase_b=0.3):
         yn_mag = yn[:,::2,:,:]
         y_mag = y[:,::2,:,:]
         yn_pha = yn[:,1::2,:,:]
@@ -119,7 +119,7 @@ class ConditionalEDMLoss:
         # scale loss phase according the values of the pixel in the magnitude image: 
         # loss_pha = loss_pha * yn_mag
 
-        return loss_pha + loss_mag, loss_mag, loss_pha
+        return loss_pha * magphase_b + loss_mag, loss_mag, loss_pha
 
     def __call__(self, net, images, priors, labels=None, augment_pipe=None):
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)

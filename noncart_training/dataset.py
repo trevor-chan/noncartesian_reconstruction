@@ -104,13 +104,14 @@ class Dataset(torch.utils.data.Dataset):
         # else:
             # image = raw_data[0]
             # prior = raw_data[1]
-        raw_data = self._load_raw_image(raw_idx)
+        if self.fetch_raw:
+            raw_data, kspace = self._load_raw_image(raw_idx)
+            # assert isinstance(kspace['kspace'], np.ndarray)
+            # kspace['kspace'] = torch.tensor(kspace['kspace']).to(torch.float32)
+        else:
+            raw_data = self._load_raw_image(raw_idx)
         image = raw_data[0]
         prior = raw_data[1]
-
-        if self.fetch_raw:
-            kspace_raw = raw_data[2]
-            assert isinstance(kspace_raw, np.ndarray)
 
         assert isinstance(image, np.ndarray)
         assert isinstance(prior, np.ndarray)
@@ -127,7 +128,7 @@ class Dataset(torch.utils.data.Dataset):
             prior = prior[:, :, ::-1]
 
         if self.fetch_raw:
-            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx), torch.tensor(kspace_raw).to(torch.float32)
+            return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx), kspace
         else:
             return torch.tensor(image).to(torch.float32), torch.tensor(prior).to(torch.float32), self.get_label(idx)
 
@@ -302,7 +303,7 @@ class NonCartesianDataset(Dataset):
                 image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
             channel_values = [np.stack((val.real,val.imag)) for val in channel_values]
             channel_values = np.concatenate(channel_values, axis=0)
-            del kspace_2ch
+            # del kspace_2ch
         else:
             for coil in range(kspace_2ch.shape[0]):
                 kspace_complex = kspace_2ch[coil,0,:,:]+kspace_2ch[coil,1,:,:]*1j
@@ -310,7 +311,7 @@ class NonCartesianDataset(Dataset):
                 # values = map_values(points,kspace_complex) #for simple value mapping
                 prior_complex[coil,:,:] = NUFFT_adjoint(points, values, kspace_complex.shape,alpha)
                 image_complex[coil,:,:] = sigpy.ifft(kspace_complex)
-            del kspace_2ch
+            # del kspace_2ch
             del points
 
         image_2ch = self.complex_to_magphase(image_complex)
@@ -330,7 +331,7 @@ class NonCartesianDataset(Dataset):
             repeats[repeats==0] = 1 # prevents divide by zero error
             kspace_raw = kspace_raw / np.tile(repeats, (image_2ch.shape[0],1,1))
             kspace_raw = kspace_raw.astype(np.float32)
-            return np.stack((image_2ch, prior_2ch, kspace_raw),axis=0)
+            return np.stack((image_2ch, prior_2ch),axis=0), {'kspace_raw':kspace_2ch, 'kspace_masked':kspace_raw, 'points':points, 'values':channel_values, 'alpha':alpha}
         else:
             return np.stack((image_2ch, prior_2ch),axis=0)
 
