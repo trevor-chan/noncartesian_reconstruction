@@ -14,8 +14,6 @@ import PIL.Image
 import json
 import torch
 import dnnlib
-import sigpy
-from training import trajectory
 
 try:
     import pyspng
@@ -34,7 +32,6 @@ class Dataset(torch.utils.data.Dataset):
         xflip       = False,    # Artificially double the size of the dataset via x-flips. Applied after max_size.
         random_seed = 0,        # Random seed to use when applying max_size.
         cache       = False,    # Cache images in CPU memory?
-        fetch_raw   = False,    # Return raw kspace data on call (used when sampling)
     ):
         self._name = name
         self._raw_shape = list(raw_shape)
@@ -43,7 +40,6 @@ class Dataset(torch.utils.data.Dataset):
         self._cached_images = dict() # {raw_idx: np.ndarray, ...}
         self._raw_labels = None
         self._label_shape = None
-        self.fetch_raw = fetch_raw
 
         # Apply max_size.
         self._raw_idx = np.arange(self._raw_shape[0], dtype=np.int64)
@@ -75,9 +71,6 @@ class Dataset(torch.utils.data.Dataset):
 
     def _load_raw_image(self, raw_idx): # to be overridden by subclass
         raise NotImplementedError
-    
-    def _load_raw_kspace(self, raw_idx): # to be overridden by subclass
-        raise NotImplementedError
 
     def _load_raw_labels(self): # to be overridden by subclass
         raise NotImplementedError
@@ -96,34 +89,19 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         raw_idx = self._raw_idx[idx]
-
-        if self.fetch_raw:
-            raw_data, kspace = self._load_raw_image(raw_idx)
-            assert isinstance(kspace, dict)
-        else:
-            raw_data = self._load_raw_image(raw_idx)
-        image = raw_data[0]
-        prior = raw_data[1]
-
-        assert isinstance(raw_data, np.ndarray)
-        assert raw_data.dtype == np.dtype(np.complex64)
-
+        image = self._cached_images.get(raw_idx, None)
+        if image is None:
+            image = self._load_raw_image(raw_idx)
+            if self._cache:
+                self._cached_images[raw_idx] = image
+        assert isinstance(image, np.ndarray)
+        assert list(image.shape) == self.image_shape
+        assert image.dtype == np.uint8
         if self._xflip[idx]:
-            assert self.fetch_raw == False, "mirroring not enabled when raw kspace is required"
             assert image.ndim == 3 # CHW
-            assert prior.ndim == 3 # CHW
-
             image = image[:, :, ::-1]
-            prior = prior[:, :, ::-1]
+        return image.copy(), self.get_label(idx)
 
-        image_tensor = trajectory.complex_to_float(image)
-        prior_tensor = trajectory.complex_to_float(prior)
-
-        if self.fetch_raw:
-            return image_tensor, prior_tensor, self.get_label(idx), kspace
-        else:
-            return image_tensor, prior_tensor, self.get_label(idx)
-        
     def get_label(self, idx):
         label = self._get_raw_labels()[self._raw_idx[idx]]
         if label.dtype == np.int64:
@@ -185,23 +163,16 @@ class Dataset(torch.utils.data.Dataset):
 # Dataset subclass that loads images recursively from the specified directory
 # or ZIP file.
 
-class NonCartesianDataset(Dataset):
+class ImageFolderDataset(Dataset):
     def __init__(self,
-        path,                           # Path to directory or zip.
-        resolution      = None,         # Ensure specific resolution, None = highest available.
-        use_pyspng      = True,         # Use pyspng if available?
-        undersampling   = 1,            # Undersampling ratio
-        interleaves     = (1,8),        # Interleaves
-        alpha_range     = (1,4),        # Alpha range
-        **super_kwargs,                 # Additional arguments for the Dataset base class.
+        path,                   # Path to directory or zip.
+        resolution      = None, # Ensure specific resolution, None = highest available.
+        use_pyspng      = True, # Use pyspng if available?
+        **super_kwargs,         # Additional arguments for the Dataset base class.
     ):
         self._path = path
         self._use_pyspng = use_pyspng
         self._zipfile = None
-        self.undersampling = undersampling
-        self.interleaves = interleaves
-        self.alpha_range = alpha_range
-        self.fetch_raw = super_kwargs['fetch_raw']
 
         if os.path.isdir(self._path):
             self._type = 'dir'
@@ -213,21 +184,12 @@ class NonCartesianDataset(Dataset):
             raise IOError('Path must point to a directory or zip')
 
         PIL.Image.init()
-
-        # Setting list to np array in order to combat multiprocessing leakage
-        self._image_fnames = np.array(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy')).astype(np.string_)
-        #self._image_fnames = torch.tensor(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy'))
-
+        self._image_fnames = sorted(fname for fname in self._all_fnames if self._file_ext(fname) in PIL.Image.EXTENSION)
         if len(self._image_fnames) == 0:
-            raise IOError('No numpy array files found in the specified path')
+            raise IOError('No image files found in the specified path')
 
         name = os.path.splitext(os.path.basename(self._path))[0]
-        # raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape)
-        if self.fetch_raw:
-            intermediate_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape)
-        else:
-            intermediate_shape = [len(self._image_fnames)] + list(self._load_raw_image(0).shape)
-        raw_shape = intermediate_shape[0], intermediate_shape[1]*intermediate_shape[2],intermediate_shape[3],intermediate_shape[4]
+        raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0).shape)
         if resolution is not None and (raw_shape[2] != resolution or raw_shape[3] != resolution):
             raise IOError('Image files do not match the specified resolution')
         super().__init__(name=name, raw_shape=raw_shape, **super_kwargs)
@@ -259,53 +221,17 @@ class NonCartesianDataset(Dataset):
     def __getstate__(self):
         return dict(super().__getstate__(), _zipfile=None)
 
-    def _load_raw_kspace(self, raw_idx):
-        fname = str(self._image_fnames[raw_idx], encoding='utf-8')
-        with self._open_file(fname) as f:
-            if self._file_ext(fname) == '.npy':
-                kspace = np.load(f)
-                assert kspace.dtype == np.float32, 'kspace datatype should be float32, half precision results in a significant drop in im quality'
-                assert kspace.shape[0] == kspace.shape[1], f'shape kspace = {kspace.shape}, file = {fname}'
-            else:
-                print('ERROR - tried to load incompatible file type, requires float32 numpy array (.npy)')
-                return 0
-        if kspace.ndim == 2:
-            kspace = kspace[:, :, np.newaxis, np.newaxis] # H,W => H,W,complex,channel
-        if kspace.ndim == 3: 
-            kspace = kspace[:, :, :, np.newaxis] # H,W,complex => H,W,complex,channel
-        kspace = kspace.transpose(3, 2, 0, 1) # H,W,complex,channel => channel,complex,H,W
-        kspace = kspace[:,0] + kspace[:,1] * 1j # convert to [channel, h, w] as complex number
-
-        return kspace
-    
-    # def complex_to_magphase(self, array_complex):
-    #     magphase = np.empty((array_complex.shape[0]*2, array_complex.shape[1], array_complex.shape[2]), dtype = np.float32)
-    #     magphase[0::2,:,:] = np.abs(array_complex).astype(np.float32)
-    #     magphase[1::2,:,:] = (np.angle(array_complex)/np.pi).astype(np.float32) #get phase angle and divide by pi to confine between [-1,+1]
-    #     return magphase
-
     def _load_raw_image(self, raw_idx):
-
-        kspace = self._load_raw_kspace(raw_idx)
-
-        points = trajectory.generate_trajectory(kspace[0,:,:].shape, interleave_range = self.interleaves, undersampling = self.undersampling, alpha_range = self.alpha_range)
-
-        # initialize nufftobj
-        nufftobj = trajectory.prealloc_nufft(kspace, points)
-
-        # compute the values via complex interpolation, compute the image prior via inverse nufft, and compute the ground truth image
-        y = trajectory.interpolate_values(points,kspace) #for complex interpolation
-        prior = trajectory.inverse_nufft(y, nufftobj)
-        image = sigpy.ifft(kspace, axes=(-1,-2))
-
-        # perform std normalization
-        prior = trajectory.intensity_normalization(prior)
-        image = trajectory.intensity_normalization(image)
-
-        if self.fetch_raw:
-            return np.stack((image, prior),axis=0), {'kspace':kspace, 'y':y, 'points':points}
-        else:
-            return np.stack((image, prior),axis=0)
+        fname = self._image_fnames[raw_idx]
+        with self._open_file(fname) as f:
+            if self._use_pyspng and pyspng is not None and self._file_ext(fname) == '.png':
+                image = pyspng.load(f.read())
+            else:
+                image = np.array(PIL.Image.open(f))
+        if image.ndim == 2:
+            image = image[:, :, np.newaxis] # HW => HWC
+        image = image.transpose(2, 0, 1) # HWC => CHW
+        return image
 
     def _load_raw_labels(self):
         fname = 'dataset.json'

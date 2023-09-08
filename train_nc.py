@@ -21,7 +21,7 @@ import click
 import torch
 import dnnlib
 from torch_utils import distributed as dist
-from noncart_training import training_loop
+from training import training_loop
 
 import warnings
 warnings.filterwarnings('ignore', 'Grad strides do not match bucket view strides') # False warning printed by PyTorch 1.12.
@@ -104,7 +104,7 @@ def main(**kwargs):
 
     # Initialize config dict.
     c = dnnlib.EasyDict()
-    c.dataset_kwargs = dnnlib.EasyDict(class_name='noncart_training.dataset.NonCartesianDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, undersampling=opts.undersampling, fetch_raw=opts.fetch_raw)
+    c.dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache, undersampling=opts.undersampling, fetch_raw=opts.fetch_raw)
     c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=opts.workers, prefetch_factor=2)
     c.network_kwargs = dnnlib.EasyDict()
     c.loss_kwargs = dnnlib.EasyDict()
@@ -143,8 +143,8 @@ def main(**kwargs):
     # else:
     if 1: #Currently only configured for edm preconditioning and customized conditional EDM loss
         assert opts.precond == 'edm'
-        c.network_kwargs.class_name = 'noncart_training.networks.EDMPrecond'
-        c.loss_kwargs.class_name = 'noncart_training.loss.ConditionalEDMLoss'
+        c.network_kwargs.class_name = 'training.networks.EDMPrecond'
+        c.loss_kwargs.class_name = 'training.loss.ConditionalEDMLoss'
 
     # Network options.
     if opts.cbase is not None:
@@ -152,7 +152,7 @@ def main(**kwargs):
     if opts.cres is not None:
         c.network_kwargs.channel_mult = opts.cres
     if opts.augment:
-        c.augment_kwargs = dnnlib.EasyDict(class_name='noncart_training.augment.AugmentPipe', p=opts.augment)
+        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', p=opts.augment)
         c.augment_kwargs.update(xflip=1e8, yflip=1, scale=1, rotate_frac=1, aniso=1, translate_frac=1)
         c.network_kwargs.augment_dim = 9
     c.network_kwargs.update(dropout=opts.dropout, use_fp16=opts.fp16)

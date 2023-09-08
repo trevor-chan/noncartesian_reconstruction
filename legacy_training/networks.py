@@ -296,7 +296,7 @@ class SongUNet(torch.nn.Module):
                 attn = (res in attn_resolutions)
                 self.enc[f'{res}x{res}_block{idx}'] = UNetBlock(in_channels=cin, out_channels=cout, attention=attn, **block_kwargs)
         skips = [block.out_channels for name, block in self.enc.items() if 'aux' not in name]
-        
+
         # Decoder.
         self.dec = torch.nn.ModuleDict()
         for level, mult in reversed(list(enumerate(channel_mult))):
@@ -589,7 +589,7 @@ class iDDPMPrecond(torch.nn.Module):
         self.C_1 = C_1
         self.C_2 = C_2
         self.M = M
-        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
+        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels*2, label_dim=label_dim, **model_kwargs)
 
         u = torch.zeros(M + 1)
         for j in range(M, 0, -1): # M, ..., 1
@@ -649,10 +649,7 @@ class EDMPrecond(torch.nn.Module):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_data = sigma_data
-        #Edited to include priors as additional input channels ---------------------------------------------------
-        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels*2, out_channels=img_channels, label_dim=label_dim, **model_kwargs) 
-        #Don't forget to change the model summary input channel argument in training loop line ~99
-        print('using EDMPrecond')
+        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
@@ -667,9 +664,7 @@ class EDMPrecond(torch.nn.Module):
 
         F_x = self.model((c_in * x).to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
         assert F_x.dtype == dtype
-        #Edited to include priors as additional input channels ---------------------------------------------------
-        D_x = c_skip * x[:,:x.shape[1]//2,:,:] + c_out * F_x.to(torch.float32) 
-        # D_x = c_skip * x + c_out * F_x.to(torch.float32)
+        D_x = c_skip * x + c_out * F_x.to(torch.float32)
         return D_x
 
     def round_sigma(self, sigma):

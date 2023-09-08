@@ -21,7 +21,7 @@ from torch_utils import distributed as dist
 from torch_utils import misc
 import glob
 import matplotlib.pyplot as plt
-from noncart_training.trajectory import *
+from training.trajectory import *
 
 
 #----------------------------------------------------------------------------
@@ -54,8 +54,8 @@ def conditional_huen_sampler(
         priors = priors.to(torch.float64)
         x_next = latents.to(torch.float64) * t_steps[0]
 
-        prior_copy = np.array(priors[0].cpu())
-        x_next_copy = np.array(x_next[0].cpu())
+        # prior_copy = np.array(priors[0].cpu())
+        # x_next_copy = np.array(x_next[0].cpu())
 
         # PIL.Image.fromarray((np.abs(prior_copy[0,:,:]+prior_copy[1,:,:]*1j)).astype(np.uint8),'L').save('out/prior_test.png')
         # PIL.Image.fromarray(np.abs(x_next_copy[0,:,:]+x_next_copy[1,:,:]*1j).astype(np.uint8)*10,'L').save('out/x_next_test.png')
@@ -214,7 +214,6 @@ def chs(
         if to_yield:
             yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
 
-    print(type(x_next))
     return x_next
 
 def chs_yield(
@@ -447,7 +446,7 @@ def main(network_pkl, priordir, outdir, subdirs, seeds, class_idx, max_batch_siz
         torch.distributed.barrier()
 
     # Load dataset.
-    dataset_kwargs = dnnlib.EasyDict(class_name='noncart_training.dataset.NonCartesianDataset', path=priordir, use_labels=False, xflip=False, fetch_raw=True)
+    dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path=priordir, use_labels=False, xflip=False, fetch_raw=True)
     data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=8, prefetch_factor=2)
     dist.print0('Loading dataset...')
     dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs) # subclass of training.dataset.Dataset

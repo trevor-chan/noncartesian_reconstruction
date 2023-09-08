@@ -8,7 +8,6 @@
 """Main training loop."""
 
 import os
-import sys
 import time
 import copy
 import json
@@ -20,16 +19,6 @@ import dnnlib
 from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import misc
-import matplotlib.pyplot as plt
-import PIL.Image
-import training.trajectory as trajectory
-import training.visualize as visualize
-
-sys.path.append('../noncartesian_reconstruction')
-from generate_conditional import conditional_huen_sampler
-
-# Import the W&B Python Library 
-import wandb
 
 #----------------------------------------------------------------------------
 
@@ -58,17 +47,6 @@ def training_loop(
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
 ):
-    run = wandb.init(
-        project="noncartesian reconstruction",
-        notes="prelim_experiments",
-        tags=["256x256","full_dataset","real and imaginary","multicoil"]
-    )
-
-    wandb.config = {
-        "batch_size": batch_size,
-        "undersampling": dataset_kwargs.undersampling,
-    }
-    
     # Initialize.
     start_time = time.time()
     np.random.seed((seed * dist.get_world_size() + dist.get_rank()) % (1 << 31))
@@ -98,8 +76,7 @@ def training_loop(
     net.train().requires_grad_(True).to(device)
     if dist.get_rank() == 0:
         with torch.no_grad():
-            #Need to change image channels for appropriate input summary for conditional model
-            images = torch.zeros([batch_gpu, net.img_channels*2, net.img_resolution, net.img_resolution], device=device)
+            images = torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device)
             sigma = torch.ones([batch_gpu], device=device)
             labels = torch.zeros([batch_gpu, net.label_dim], device=device)
             misc.print_module_summary(net, [images, sigma, labels], max_nesting=2)
@@ -147,14 +124,10 @@ def training_loop(
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
-                images, priors, labels = next(dataset_iterator) #get images and image priors separately from the dataset, also fetch labels
-                # images = trajectory.complex_to_float(images, device=device)
-                # priors = trajectory.complex_to_float(priors, device=device)
-                images = images.to(device)
-                priors = priors.to(device)
+                images, labels = next(dataset_iterator)
+                images = images.to(device).to(torch.float32) / 127.5 - 1
                 labels = labels.to(device)
-
-                loss, loss_mag, loss_phase = loss_fn(net=ddp, images=images, priors=priors, labels=labels, augment_pipe=augment_pipe) #currently calls ConditionalEDMLoss only
+                loss, loss_mag, loss_phase = loss_fn(net=ddp, images=images, labels=labels, augment_pipe=augment_pipe)
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
@@ -180,42 +153,6 @@ def training_loop(
         if (not done) and (cur_tick != 0) and (cur_nimg < tick_start_nimg + kimg_per_tick * 1000):
             continue
 
-        # Perform validation sampling
-        torch.cuda.empty_cache()
-        with torch.no_grad():
-            ddp.eval()
-            images, priors, labels = dataset_obj[14154]
-            priors = priors.to(device)
-            images = torch.unsqueeze(images,0)
-            priors = torch.unsqueeze(priors,0)
-            assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
-
-            image_mag = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=False)
-            image_pha = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=True)
-
-            prior_mag = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=False)
-            prior_pha = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=True)
-
-            latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
-            recons = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents), to_yield=False)
-
-            recons = recons.to(torch.float32)
-
-            recon_mag = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=False)
-            recon_pha = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=True)
-            
-            # Save images.
-            os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
-            savename_mag = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_mag_recon.png'
-            savename_pha = f'{run_dir}/validation_images/{str(cur_tick).zfill(3)}_pha_recon.png'
-            visualize.tensor_to_image(torch.tensor(recon_mag).unsqueeze(0), normalize=True).save(savename_mag)
-            visualize.tensor_to_image(torch.tensor(recon_pha).unsqueeze(0), normalize=True).save(savename_pha)
-
-            image_to_save_mag = (np.concatenate((image_mag, prior_mag, recon_mag),axis=2) * 255).clip(0,255).astype(np.uint8)
-            image_to_save_pha = (np.concatenate((image_pha, prior_pha, recon_pha),axis=2) * 255).clip(0,255).astype(np.uint8)
-            image_to_save = PIL.Image.fromarray(np.concatenate((image_to_save_mag, image_to_save_pha),axis=1)[0,:,:],'L')
-        
-
         # Print status line, accumulating the same information in training_stats.
         tick_end_time = time.time()
         fields = []
@@ -230,14 +167,6 @@ def training_loop(
         fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', torch.cuda.max_memory_reserved(device) / 2**30):<6.2f}"]
         torch.cuda.reset_peak_memory_stats()
         dist.print0(' '.join(fields))
-        
-        # wandb logging:          
-        wandb.log({"loss_mean": torch.mean(loss),
-                   "loss_stdv": torch.std(loss),
-                   "loss_magnitude": torch.mean(loss_mag),
-                   "loss_phase": torch.mean(loss_phase),
-                   "loss": loss,
-                   "images": wandb.Image(image_to_save),})
 
         # Check for abort.
         if (not done) and dist.should_stop():
@@ -279,8 +208,6 @@ def training_loop(
         maintenance_time = tick_start_time - tick_end_time
         if done:
             break
-
-        torch.cuda.empty_cache()
 
     # Done.
     dist.print0()
