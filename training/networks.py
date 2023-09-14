@@ -668,7 +668,8 @@ class EDMPrecond(torch.nn.Module):
         F_x = self.model((c_in * x).to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
         assert F_x.dtype == dtype
         #Edited to include priors as additional input channels ---------------------------------------------------
-        D_x = c_skip * x[:,:x.shape[1]//2,:,:] + c_out * F_x.to(torch.float32) 
+        # D_x = c_skip * x[:,:x.shape[1]//2,:,:] + c_out * F_x.to(torch.float32) 
+        D_x = c_skip * x[:,:int(x.shape[1]/2),:,:] + c_out * F_x.to(torch.float32)
         # D_x = c_skip * x + c_out * F_x.to(torch.float32)
         return D_x
 

@@ -131,7 +131,7 @@ def forward_nufft(x, nufftobjs):
     return y
 
 # compute inverse nufft
-def inverse_nufft(y, nufftobjs):
+def inverse_nufft(y, nufftobjs, maxiter=100):
     assert isinstance(y,np.ndarray), f'expected a numpy ndarray but got type {type(y)}'
     assert y.dtype == np.dtype(np.complex64), f'expected a datatype of np.complex64 but got type {y.dtype}'
     assert len(y.shape) > 1 & len(y.shape) < 4, f'expected shape to be in form [ch, sample] or [b, ch, sample], got {y.shape}'
@@ -140,7 +140,7 @@ def inverse_nufft(y, nufftobjs):
         x = np.zeros((y.shape[0],nufftobjs.Nd[0],nufftobjs.Nd[1]), dtype=np.complex64)
         channels = np.count_nonzero(np.count_nonzero(y, axis=-1))
         for ch in range(channels):
-            x[ch] = nufftobjs.solve(y[ch], solver='cg',maxiter=100)
+            x[ch] = nufftobjs.solve(y[ch], solver='cg',maxiter=maxiter)
     
     else:
         assert isinstance(nufftobjs,list), 'provided a batch of frequency samples, requires a list of preallocated nufft objects'
@@ -149,15 +149,19 @@ def inverse_nufft(y, nufftobjs):
         for b in range(batches):
             channels = np.count_nonzero(np.count_nonzero(y[b], axis=-1))
             for ch in range(channels):
-                 x[b,ch] = nufftobjs[b].solve(y[b,ch], solver='cg',maxiter=100)
+                 x[b,ch] = nufftobjs[b].solve(y[b,ch], solver='cg',maxiter=maxiter)
     return x
 
 
 # normalize the intensity of a prior image by setting the standard deviation
-def intensity_normalization(image_array, clipping=False):
+def intensity_normalization(image_array, deviations=4, clipping=True):
     assert isinstance(image_array,np.ndarray), f'expected a numpy ndarray but got type {type(image_array)}'
     assert image_array.dtype == np.dtype(np.complex64), f'expected a datatype of np.complex64 but got type {image_array.dtype}'
     assert len(image_array.shape) > 2 & len(image_array.shape) < 5, f'expected shape to be in form [ch, w, h] or [b, ch, w, h], got {image_array.shape}'
+
+    def sym_clip(arr,lim): 
+        np.clip(arr.real, -lim, lim, out=arr.real)
+        np.clip(arr.imag, -lim, lim, out=arr.imag)
 
     if len(image_array.shape) == 3:
         channels = np.nonzero(np.sum(image_array,axis=(-1,-2)))[0]
@@ -165,8 +169,8 @@ def intensity_normalization(image_array, clipping=False):
         for ch in channels:
             stds.append(np.std(image_array[ch]))
         std_mean = sum(stds)/len(stds)
-        image_array = image_array * (1/std_mean) / 3 #scale data such that +-1 lies at 3 standard devations from the mean
-        if clipping: image_array = np.clip(image_array, -1, 1)
+        image_array = image_array * (1/std_mean) / deviations #scale data such that +-1 lies at 3 standard devations from the mean
+        if clipping: sym_clip(image_array, 1)
         return image_array
     else:
         for b in range(image_array.shape[0]):
@@ -175,8 +179,8 @@ def intensity_normalization(image_array, clipping=False):
             for ch in channels:
                 stds.append(np.std(image_array[b,ch]))
             std_mean = sum(stds)/len(stds)
-            image_array[b] = image_array[b] * (1/std_mean) / 3
-        if clipping: image_array = np.clip(image_array, -1, 1)
+            image_array[b] = image_array[b] * (1/std_mean) / deviations
+        if clipping: sym_clip(image_array, 1)
         return image_array
 
 

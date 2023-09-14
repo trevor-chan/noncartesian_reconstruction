@@ -184,17 +184,17 @@ def training_loop(
         torch.cuda.empty_cache()
         with torch.no_grad():
             ddp.eval()
-            images, priors, labels = dataset_obj[14154]
+            images, priors, labels = dataset_obj[4000]
             priors = priors.to(device)
             images = torch.unsqueeze(images,0)
             priors = torch.unsqueeze(priors,0)
             assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
 
             image_mag = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=False)
-            image_pha = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=True)
+            image_pha = trajectory.root_summed_squares(trajectory.float_to_complex(images/torch.pi), phase=True)
 
             prior_mag = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=False)
-            prior_pha = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=True)
+            prior_pha = trajectory.root_summed_squares(trajectory.float_to_complex(priors/torch.pi), phase=True)
 
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
             recons = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents), to_yield=False)
@@ -202,7 +202,7 @@ def training_loop(
             recons = recons.to(torch.float32)
 
             recon_mag = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=False)
-            recon_pha = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=True)
+            recon_pha = trajectory.root_summed_squares(trajectory.float_to_complex(recons/torch.pi), phase=True)
             
             # Save images.
             os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
@@ -211,8 +211,8 @@ def training_loop(
             visualize.tensor_to_image(torch.tensor(recon_mag).unsqueeze(0), normalize=True).save(savename_mag)
             visualize.tensor_to_image(torch.tensor(recon_pha).unsqueeze(0), normalize=True).save(savename_pha)
 
-            image_to_save_mag = (np.concatenate((image_mag, prior_mag, recon_mag),axis=2) * 255).clip(0,255).astype(np.uint8)
-            image_to_save_pha = (np.concatenate((image_pha, prior_pha, recon_pha),axis=2) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_mag = ((np.concatenate((image_mag, prior_mag, recon_mag),axis=2)-0.3) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_pha = ((np.concatenate((image_pha, prior_pha, recon_pha),axis=2)-0.3) * 255).clip(0,255).astype(np.uint8)
             image_to_save = PIL.Image.fromarray(np.concatenate((image_to_save_mag, image_to_save_pha),axis=1)[0,:,:],'L')
         
 

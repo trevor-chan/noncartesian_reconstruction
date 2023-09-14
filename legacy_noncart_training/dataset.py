@@ -15,7 +15,7 @@ import json
 import torch
 import dnnlib
 import sigpy
-from noncart_training.trajectory import *
+from legacy_noncart_training.trajectory import *
 
 try:
     import pyspng

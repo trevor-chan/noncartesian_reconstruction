@@ -87,7 +87,6 @@ def conditional_huen_sampler(
                 d_prime = (x_next - denoised) / t_next
                 x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
 
-        print(type(x_next))
         return x_next
 
     def chs_yield(
@@ -146,7 +145,6 @@ def conditional_huen_sampler(
             if to_yield:
                 yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
 
-        print(type(x_next))
         return x_next
     
     if to_yield:
@@ -272,7 +270,6 @@ def chs_yield(
         if to_yield:
             yield dnnlib.EasyDict(x=x_next, denoised=denoised, step=i+1, num_steps=num_steps, t=t_next, c=0, noise_std=t_next)
 
-    print(type(x_next))
     return x_next
 
 

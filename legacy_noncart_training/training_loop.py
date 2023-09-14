@@ -22,7 +22,7 @@ from torch_utils import training_stats
 from torch_utils import misc
 import matplotlib.pyplot as plt
 import PIL.Image
-from noncart_training.trajectory import *
+from legacy_noncart_training.trajectory import *
 
 sys.path.append('../noncartesian_reconstruction')
 from generate_conditional import conditional_huen_sampler

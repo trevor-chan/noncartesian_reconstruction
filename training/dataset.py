@@ -35,6 +35,7 @@ class Dataset(torch.utils.data.Dataset):
         random_seed = 0,        # Random seed to use when applying max_size.
         cache       = False,    # Cache images in CPU memory?
         fetch_raw   = False,    # Return raw kspace data on call (used when sampling)
+        maxiter     = 100
     ):
         self._name = name
         self._raw_shape = list(raw_shape)
@@ -44,6 +45,7 @@ class Dataset(torch.utils.data.Dataset):
         self._raw_labels = None
         self._label_shape = None
         self.fetch_raw = fetch_raw
+        self.maxiter = maxiter
 
         # Apply max_size.
         self._raw_idx = np.arange(self._raw_shape[0], dtype=np.int64)
@@ -202,6 +204,7 @@ class NonCartesianDataset(Dataset):
         self.interleaves = interleaves
         self.alpha_range = alpha_range
         self.fetch_raw = super_kwargs['fetch_raw']
+        self.maxiter = super_kwargs['maxiter']
 
         if os.path.isdir(self._path):
             self._type = 'dir'
@@ -295,7 +298,7 @@ class NonCartesianDataset(Dataset):
 
         # compute the values via complex interpolation, compute the image prior via inverse nufft, and compute the ground truth image
         y = trajectory.interpolate_values(points,kspace) #for complex interpolation
-        prior = trajectory.inverse_nufft(y, nufftobj)
+        prior = trajectory.inverse_nufft(y, nufftobj, maxiter=self.maxiter)
         image = sigpy.ifft(kspace, axes=(-1,-2))
 
         # perform std normalization

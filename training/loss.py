@@ -104,27 +104,55 @@ class ConditionalEDMLoss:
     #     return angular_dist
     
     # Function to calculate the loss as a weighted sum of magnitude[MSE of magnitude images] and phase[the sum of horizontal and vertical component distance between two phase images]
-    def loss_condition(self, yn, y, weight, magphase_b=0.3):
+    def loss_condition(self, yn, y, weight, magphase_b=0.01):
         yn_mag = torch.abs(yn[:,:yn.shape[1]//2]+yn[:,yn.shape[1]//2:]*1j)
         y_mag = torch.abs(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
         yn_pha = torch.angle(yn[:,:yn.shape[1]//2]+yn[:,yn.shape[1]//2:]*1j)
         y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
-        hor_n = torch.cos(yn_pha * torch.pi)
-        hor = torch.cos(y_pha * torch.pi)
-        ver_n = torch.sin(yn_pha * torch.pi)
-        ver = torch.sin(y_pha * torch.pi)
-        loss_pha = weight * ((hor_n-hor) ** 2 + (ver_n - ver) ** 2)
+
+        # print(torch.amax(y_pha))
+        # print(torch.amin(y_pha))
+
+        # print(torch.amax(yn_pha))
+        # print(torch.amin(yn_pha))
+
+        # print(torch.amax(y_mag))
+        # print(torch.amin(y_mag))
+
+        # print(torch.amax(yn_mag))
+        # print(torch.amin(yn_mag))
+
+        hor_n = torch.cos(yn_pha)
+        hor = torch.cos(y_pha)
+        ver_n = torch.sin(yn_pha)
+        ver = torch.sin(y_pha)
+
+        loss_pha = weight * ((hor_n-hor) ** 2 + (ver_n - ver) ** 2) * magphase_b
         loss_mag = weight * ((yn_mag - y_mag) ** 2)
 
         # scale loss phase according the values of the pixel in the magnitude image: 
         # loss_pha = loss_pha * yn_mag
 
-        return loss_pha * magphase_b + loss_mag, loss_mag, loss_pha
+        return loss_pha + loss_mag, loss_mag, loss_pha
+    
+    def simple_loss_condition(self, yn, y, weight):
+        return weight * ((yn - y) ** 2), weight * ((yn - y) ** 2), weight * ((yn - y) ** 2)
 
     def __call__(self, net, images, priors, labels=None, augment_pipe=None):
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
+
+        # print('\nimages:')
+        # print(images.shape)
+        # print(torch.amax(images))
+        # print(torch.amin(images))
+        # print(torch.std(images))
+        # print('priors')
+        # print(priors.shape)
+        # print(torch.amax(priors))
+        # print(torch.amin(priors))
+        # print(torch.std(priors))
 
         imageprior = torch.cat((images,priors),dim=1) #concatenate the image and prior in the channel dimension for augmentations
 
@@ -135,11 +163,23 @@ class ConditionalEDMLoss:
         # prior_mag = yp[:,images.shape[1]*2:,:,:]
         n = torch.randn_like(y) * sigma
 
+        # print('y:')
+        # print(y.shape)
+        # print(torch.amax(y))
+        # print(torch.amin(y))
+        # print(torch.std(y))
+        # print('prior')
+        # print(prior.shape)
+        # print(torch.amax(prior))
+        # print(torch.amin(prior))
+        # print(torch.std(prior))
+
         ynp = torch.cat((y+n, prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
 
         D_yn = net(ynp, sigma, labels, augment_labels=augment_labels)
 
-        loss, loss_mag, loss_pha = self.loss_condition(D_yn, y, weight)
+        # loss, loss_mag, loss_pha = self.loss_condition(D_yn, y, weight)
+        loss, loss_mag, loss_pha = self.simple_loss_condition(D_yn, y, weight)
 
         return loss, loss_mag, loss_pha
 
