@@ -36,7 +36,7 @@ import time
 def save_loop(dataset_iterator, savedir, num_files, subdir_number=10000, repetitions=1):
     print(f'Processing a dataset of {num_files} files times {repetitions} repetitions into subfolders of {subdir_number}')
     for i in range(num_files*repetitions//10000+1):
-        remaining = num_files - i*subdir_number
+        remaining = num_files*repetitions - i*subdir_number
         next_n = min(remaining, subdir_number)
         for j in tqdm.tqdm(range(next_n)):
             os.makedirs(f'{savedir}/{str(i).zfill(5)}', exist_ok=True)
@@ -46,13 +46,13 @@ def save_loop(dataset_iterator, savedir, num_files, subdir_number=10000, repetit
 
 
 def main():
-    savedir = '../fastMRIprocessing/more_space/precompute_256_multicoil_T2_test'
-    savedir = '../fastMRIprocessing/more_space/precompute_data_256_multicoil_T2_train'
+    # savedir = '../fastMRIprocessing/more_space/precompute_256_multicoil_T2_test'
+    savedir = '../fastMRIprocessing/magnetic_drive/trevor/noncart_dataset/precompute_256_multicoil_T2_train'
 
     # Load dataset.
     seeds = [0,]
-    dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path='../fastMRIprocessing/more_space/data_256_multicoil_T2_train', use_labels=False, xflip=True, fetch_raw=False, undersampling=0.05, interleaves=(4,24), maxiter = 100)
-    data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=48, prefetch_factor=3)
+    dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path='../fastMRIprocessing/magnetic_drive/trevor/noncart_dataset/subset2', use_labels=False, xflip=True, fetch_raw=False, undersampling=0.05, interleaves=(4,24), maxiter = 100)
+    data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=32, prefetch_factor=3)
     dist.print0('Loading dataset...')
     dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs) # subclass of training.dataset.Dataset
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seeds[0])
