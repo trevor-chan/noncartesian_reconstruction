@@ -179,7 +179,7 @@ class ConditionalEDMLoss:
         D_yn = net(ynp, sigma, labels, augment_labels=augment_labels)
 
         # loss, loss_mag, loss_pha = self.loss_condition(D_yn, y, weight)
-        loss, loss_mag, loss_pha = self.simple_loss_condition(D_yn, y, weight)
+        loss, loss_mag, loss_pha = self.loss_condition(D_yn, y, weight)
 
         return loss, loss_mag, loss_pha
 

@@ -35,7 +35,6 @@ class Dataset(torch.utils.data.Dataset):
         random_seed = 0,        # Random seed to use when applying max_size.
         cache       = False,    # Cache images in CPU memory?
         fetch_raw   = False,    # Return raw kspace data on call (used when sampling)
-        maxiter     = 100
     ):
         self._name = name
         self._raw_shape = list(raw_shape)
@@ -45,7 +44,6 @@ class Dataset(torch.utils.data.Dataset):
         self._raw_labels = None
         self._label_shape = None
         self.fetch_raw = fetch_raw
-        self.maxiter = maxiter
 
         # Apply max_size.
         self._raw_idx = np.arange(self._raw_shape[0], dtype=np.int64)
@@ -204,7 +202,6 @@ class NonCartesianDataset(Dataset):
         self.interleaves = interleaves
         self.alpha_range = alpha_range
         self.fetch_raw = super_kwargs['fetch_raw']
-        self.maxiter = super_kwargs['maxiter']
 
         if os.path.isdir(self._path):
             self._type = 'dir'
@@ -298,7 +295,7 @@ class NonCartesianDataset(Dataset):
 
         # compute the values via complex interpolation, compute the image prior via inverse nufft, and compute the ground truth image
         y = trajectory.interpolate_values(points,kspace) #for complex interpolation
-        prior = trajectory.inverse_nufft(y, nufftobj, maxiter=self.maxiter)
+        prior = trajectory.inverse_nufft(y, nufftobj, maxiter=100)
         image = sigpy.ifft(kspace, axes=(-1,-2))
 
         # perform std normalization
@@ -325,3 +322,190 @@ class NonCartesianDataset(Dataset):
         return labels
 
 #----------------------------------------------------------------------------
+
+
+class precomputed_dataset(torch.utils.data.Dataset):
+    def __init__(self,
+        path,
+        resolution  = None,         # Ensure specific resolution, None = highest available.
+        max_size    = None,     # Artificially limit the size of the dataset. None = no limit. Applied before xflip.
+        use_labels  = False,    # Enable conditioning labels? False = label dimension is zero.
+        xflip       = False,    # Artificially double the size of the dataset via x-flips. Applied after max_size.
+        random_seed = 0,        # Random seed to use when applying max_size.
+        cache       = False,    # Cache images in CPU memory?
+        fetch_raw   = False,    # Return raw kspace data on call (used when sampling)
+    ):
+        self._path = path
+        self._name = os.path.splitext(os.path.basename(self._path))[0]
+        self._use_labels = use_labels
+        self._cache = cache
+        self._cached_images = dict() # {raw_idx: np.ndarray, ...}
+        self._raw_labels = None
+        self._label_shape = None
+        self.fetch_raw = fetch_raw
+
+        if os.path.isdir(self._path):
+            self._type = 'dir'
+            self._all_fnames = {os.path.relpath(os.path.join(root, fname), start=self._path) for root, _dirs, files in os.walk(self._path) for fname in files}
+        elif self._file_ext(self._path) == '.zip':
+            self._type = 'zip'
+            self._all_fnames = set(self._get_zipfile().namelist())
+        else:
+            raise IOError('Path must point to a directory or zip')
+        
+        # Setting list to np array in order to combat multiprocessing leakage
+        self._image_fnames = np.array(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.pt')).astype(np.string_)
+        #self._image_fnames = torch.tensor(sorted(fname for fname in self._all_fnames if self._file_ext(fname) == '.npy'))
+
+        if len(self._image_fnames) == 0:
+            raise IOError('No torch tensor files found in the specified path')
+
+        # self.name = os.path.splitext(os.path.basename(self._path))[0]
+        # raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape)
+        # if self.fetch_raw:
+        intermediate_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape)
+        # else:
+        #     intermediate_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape)
+        self._raw_shape = intermediate_shape[0], intermediate_shape[1]*intermediate_shape[2],intermediate_shape[3],intermediate_shape[4]
+
+        if resolution is not None and (self._raw_shape[2] != resolution or self._raw_shape[3] != resolution):
+            raise IOError('Image files do not match the specified resolution')
+
+        # Apply max_size.
+        self._raw_idx = np.arange(self._raw_shape[0], dtype=np.int64)
+        if (max_size is not None) and (self._raw_idx.size > max_size):
+            np.random.RandomState(random_seed % (1 << 31)).shuffle(self._raw_idx)
+            self._raw_idx = np.sort(self._raw_idx[:max_size])
+
+        # Apply xflip.
+        self._xflip = np.zeros(self._raw_idx.size, dtype=np.uint8)
+        if xflip:
+            self._raw_idx = np.tile(self._raw_idx, 2)
+            self._xflip = np.concatenate([self._xflip, np.ones_like(self._xflip)])
+
+    def _get_raw_labels(self):
+        if self._raw_labels is None:
+            self._raw_labels = self._load_raw_labels() if self._use_labels else None
+            if self._raw_labels is None:
+                self._raw_labels = np.zeros([self._raw_shape[0], 0], dtype=np.float32)
+            assert isinstance(self._raw_labels, np.ndarray)
+            assert self._raw_labels.shape[0] == self._raw_shape[0]
+            assert self._raw_labels.dtype in [np.float32, np.int64]
+            if self._raw_labels.dtype == np.int64:
+                assert self._raw_labels.ndim == 1
+                assert np.all(self._raw_labels >= 0)
+        return self._raw_labels
+    
+    @staticmethod
+    def _file_ext(fname):
+        return os.path.splitext(str(fname))[1].lower()
+    
+
+    def close(self): # to be overridden by subclass
+        pass
+
+    def _load_raw_image(self, raw_idx): # to be overridden by subclass
+        fname = os.path.join(self._path,str(self._image_fnames[raw_idx], encoding="utf-8"))
+
+        if self._file_ext(fname) == '.pt':
+            try:
+                datas = torch.load(fname)
+            except:
+                print(f'Error, cannot load {fname}. Corrupted file?')
+                return 0
+        else:
+            print('ERROR - tried to load incompatible file type, requires float32 torch tensor (.pt)')
+            return 0
+        return datas
+
+    def __getstate__(self):
+        return dict(self.__dict__, _raw_labels=None)
+
+    def __del__(self):
+        try:
+            self.close()
+        except:
+            pass
+
+    def __len__(self):
+        return self._raw_idx.size
+
+    def __getitem__(self, idx):
+        raw_idx = self._raw_idx[idx]
+
+        if self.fetch_raw:
+            image, prior, label, kspace = self._load_raw_image(raw_idx)
+            assert isinstance(kspace, dict)
+        else:
+            datas = self._load_raw_image(raw_idx)
+            image, prior, label = datas[0:3]
+
+        assert image.dtype == torch.float32
+
+        # remove batch dim
+        image = image[0]
+        prior = prior[0]
+        label = label[0]
+
+        if self._xflip[idx]:
+            assert self.fetch_raw == False, "mirroring not enabled when raw kspace is required"
+            assert image.ndim == 3 # CHW
+            assert prior.ndim == 3 # CHW
+
+            image = image[:, :, ::-1]
+            prior = prior[:, :, ::-1]
+
+
+        if self.fetch_raw:
+            return image, prior, label, kspace
+        else:
+            return image, prior, label
+
+    def get_details(self, idx):
+        d = dnnlib.EasyDict()
+        d.raw_idx = int(self._raw_idx[idx])
+        d.xflip = (int(self._xflip[idx]) != 0)
+        d.raw_label = self._get_raw_labels()[d.raw_idx].copy()
+        return d
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def image_shape(self):
+        return list(self._raw_shape[1:])
+
+    @property
+    def num_channels(self):
+        assert len(self.image_shape) == 3 # CHW
+        return self.image_shape[0]
+
+    @property
+    def resolution(self):
+        assert len(self.image_shape) == 3 # CHW
+        assert self.image_shape[1] == self.image_shape[2]
+        return self.image_shape[1]
+
+    @property
+    def label_shape(self):
+        if self._label_shape is None:
+            raw_labels = self._get_raw_labels()
+            if raw_labels.dtype == np.int64:
+                self._label_shape = [int(np.max(raw_labels)) + 1]
+            else:
+                self._label_shape = raw_labels.shape[1:]
+        return list(self._label_shape)
+
+    @property
+    def label_dim(self):
+        assert len(self.label_shape) == 1
+        return self.label_shape[0]
+
+    @property
+    def has_labels(self):
+        return any(x != 0 for x in self.label_shape)
+
+    @property
+    def has_onehot_labels(self):
+        return self._get_raw_labels().dtype == np.int64

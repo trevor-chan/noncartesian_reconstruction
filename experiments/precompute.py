@@ -47,12 +47,12 @@ def save_loop(dataset_iterator, savedir, num_files, subdir_number=10000, repetit
 
 def main():
     # savedir = '../fastMRIprocessing/more_space/precompute_256_multicoil_T2_test'
-    savedir = '../fastMRIprocessing/magnetic_drive/trevor/noncart_dataset/precompute_256_multicoil_T2_train'
+    savedir = '../fastMRIprocessing/data_128_multicoil/precompute_T2_train'
 
     # Load dataset.
     seeds = [0,]
-    dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path='../fastMRIprocessing/magnetic_drive/trevor/noncart_dataset/subset2', use_labels=False, xflip=True, fetch_raw=False, undersampling=0.05, interleaves=(4,24), maxiter = 100)
-    data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=32, prefetch_factor=3)
+    dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NonCartesianDataset', path='../fastMRIprocessing/data_128_multicoil/T2_train', use_labels=False, xflip=False, fetch_raw=True, undersampling=0.1, interleaves=(4,24))
+    data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=12, prefetch_factor=3)
     dist.print0('Loading dataset...')
     dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs) # subclass of training.dataset.Dataset
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seeds[0])
