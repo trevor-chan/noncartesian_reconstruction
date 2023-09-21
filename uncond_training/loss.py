@@ -80,35 +80,17 @@ class EDMLoss:
         return loss
 
 #----------------------------------------------------------------------------
-# Conditional loss function modeled off of:
-# Improved loss function proposed in the paper "Elucidating the Design Space
-# of Diffusion-Based Generative Models" (EDM).
+
 
 @persistence.persistent_class
-class ConditionalEDMLoss:
+class UnconditionalEDMLoss:
     def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
         self.P_mean = P_mean
         self.P_std = P_std
         self.sigma_data = sigma_data
-
-    # #Function to calculate the distance/loss between two phase images on a -1 to +1 scale
-    # def angular_distance(self, yn, y):
-    #     top_dist = torch.abs(yn - y)
-    #     yn[yn<0]+=1
-    #     yn[yn>0]-=1
-    #     y[y<0]+=1
-    #     y[y>0]-=1
-    #     bot_dist = torch.abs(yn - y)
-    #     angular_dist = torch.where(top_dist<bot_dist, top_dist, bot_dist)
-    #     angular_dist = angular_dist*(1-angular_dist) #reduces magnitude of phase loss in the case where it is 180 degrees off - hopefully resulting in better stability
-    #     return angular_dist
     
     # Function to calculate the loss as a weighted sum of magnitude[MSE of magnitude images] and phase[the sum of horizontal and vertical component distance between two phase images]
     def loss_condition(self, yn, y, weight, magphase_b=0.2):
-        # yn_mag = torch.abs(yn[:,:yn.shape[1]//2]+yn[:,yn.shape[1]//2:]*1j)
-        # y_mag = torch.abs(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
-        # yn_pha = torch.angle(yn[:,:yn.shape[1]//2]+yn[:,yn.shape[1]//2:]*1j)
-        # y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
         channels = yn.shape[1]
 
         yn_mag = yn[:,:channels//2]
@@ -129,30 +111,22 @@ class ConditionalEDMLoss:
     def simple_loss_condition(self, yn, y, weight):
         return weight * ((yn - y) ** 2), weight * ((yn - y) ** 2), weight * ((yn - y) ** 2)
 
-    def __call__(self, net, images, priors, labels=None, augment_pipe=None):
+    def __call__(self, net, images, labels=None, augment_pipe=None):
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
 
-        imageprior = torch.cat((images,priors),dim=1) #concatenate the image and prior in the channel dimension for augmentations
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
 
-        yp, augment_labels = augment_pipe(imageprior) if augment_pipe is not None else (images, None)
-
-        y = yp[:,:images.shape[1],:,:]
-        prior = yp[:,images.shape[1]:images.shape[1]*2,:,:]
         n = torch.randn_like(y) * sigma
 
         # convert image and prior to magnitude phase representations
         y_mag = torch.abs(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
         y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
-        prior_mag = torch.abs(prior[:,:prior.shape[1]//2]+prior[:,prior.shape[1]//2:]*1j)
-        prior_pha = torch.angle(prior[:,:prior.shape[1]//2]+prior[:,prior.shape[1]//2:]*1j)
-
         y_magphase = torch.cat((y_mag, y_pha), dim=1)
-        prior_magphase = torch.cat((prior_mag, prior_pha), dim=1)
 
         # ynp = torch.cat((y+n, prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
-        ynp = torch.cat((y_magphase+n, prior_magphase),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior
+        ynp = y_magphase+n
 
         D_yn = net(ynp, sigma, labels, augment_labels=augment_labels)
 
