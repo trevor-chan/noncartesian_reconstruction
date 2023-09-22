@@ -196,7 +196,7 @@ def root_summed_squares(image_array, phase = False):
     assert len(image_array.shape) > 2 & len(image_array.shape) < 5, f'expected shape to be in form [ch, w, h] or [b, ch, w, h], got {image_array.shape}'
 
     if phase:
-        phase_array = np.angle(image_array)
+        phase_array = np.angle(image_array) / np.pi
         channels = image_array.shape[-3]
         phase_combined = np.power(np.sum(np.power(phase_array,2)/channels,axis=-3),0.5)
         return phase_combined
