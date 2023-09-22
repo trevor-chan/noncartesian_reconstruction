@@ -263,7 +263,7 @@ def complex_to_magphase(image_array, device = None):
 # convert torch tensor of type float32 and shape [2*ch, w, h] or [b, 2*ch, w, h] to numpy array of type complex64 and shape [ch, w, h] or [b, ch, w, h]
 def magphase_to_complex(image_tensor, device = None):
     assert isinstance(image_tensor,torch.Tensor), f'expected a torch tensor but got type {type(image_tensor)}'
-    assert image_tensor.dtype == torch.float32, f'expected a datatype of torch.float32 but got type {image_tensor.dtype}'
+    # assert image_tensor.dtype == torch.float32, f'expected a datatype of torch.float32 but got type {image_tensor.dtype}'
     assert len(image_tensor.shape) > 2 & len(image_tensor.shape) < 5, f'expected shape to be in form [2*ch, w, h] or [b, 2*ch, w, h], got {image_tensor.shape}'
     assert image_tensor.shape[-3] % 2 == 0, 'channel dimension is not even, what are you doing?'
 
