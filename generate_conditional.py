@@ -49,6 +49,11 @@ def conditional_huen_sampler(
         t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
         t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])]) # t_N = 0
 
+        # Convert latents to magnitude phase format
+        prior_mag = torch.abs(priors[:,:priors.shape[1]//2]+priors[:,priors.shape[1]//2:]*1j)
+        prior_pha = torch.angle(priors[:,:priors.shape[1]//2]+priors[:,priors.shape[1]//2:]*1j)
+        priors = torch.cat((prior_mag, prior_pha), dim=1)
+
         # Main sampling loop.
         assert priors.shape == latents.shape, f'Priors {priors.shape} and latents {latents.shape} passed are incompatible shapes'
         priors = priors.to(torch.float64)
