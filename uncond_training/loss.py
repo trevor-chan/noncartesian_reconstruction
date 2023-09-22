@@ -122,7 +122,7 @@ class UnconditionalEDMLoss:
 
         # convert image and prior to magnitude phase representations
         y_mag = torch.abs(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
-        y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
+        y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j) / torch.pi
         y_magphase = torch.cat((y_mag, y_pha), dim=1)
 
         # ynp = torch.cat((y+n, prior),dim=1) #concatenate the image and prior in the channel dimension for input into the network as noisy y and prior

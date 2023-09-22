@@ -190,10 +190,10 @@ def training_loop(
             assert len(images.shape)==4, 'batch dimension is not here during validation check' #check to make sure batch dimension is present
 
             image_mag = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=False)
-            image_pha = trajectory.root_summed_squares(trajectory.float_to_complex(images/torch.pi), phase=True)
+            image_pha = trajectory.root_summed_squares(trajectory.float_to_complex(images), phase=True)
 
             prior_mag = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=False)
-            prior_pha = trajectory.root_summed_squares(trajectory.float_to_complex(priors/torch.pi), phase=True)
+            prior_pha = trajectory.root_summed_squares(trajectory.float_to_complex(priors), phase=True)
 
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
             recons = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents), to_yield=False)
@@ -208,8 +208,8 @@ def training_loop(
             visualize.tensor_to_image(torch.tensor(recon_mag).unsqueeze(0), normalize=True).save(savename_mag)
             visualize.tensor_to_image(torch.tensor(recon_pha).unsqueeze(0), normalize=True).save(savename_pha)
 
-            image_to_save_mag = ((np.concatenate((image_mag, prior_mag, recon_mag),axis=2)-0.3) * 255).clip(0,255).astype(np.uint8)
-            image_to_save_pha = ((np.concatenate((image_pha, prior_pha, recon_pha),axis=2)-0.3) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_mag = ((np.concatenate((image_mag, prior_mag, recon_mag),axis=2)-0.5) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_pha = ((np.concatenate((image_pha, prior_pha, recon_pha),axis=2)-0.5) * 255).clip(0,255).astype(np.uint8)
             image_to_save = PIL.Image.fromarray(np.concatenate((image_to_save_mag, image_to_save_pha),axis=1)[0,:,:],'L')
         
 

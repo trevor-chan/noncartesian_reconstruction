@@ -26,7 +26,7 @@ import training.trajectory as trajectory
 import training.visualize as visualize
 
 sys.path.append('../noncartesian_reconstruction')
-from generate import edm_sampler
+from generate_conditional import unconditional_huen_sampler
 
 # Import the W&B Python Library 
 import wandb
@@ -182,12 +182,10 @@ def training_loop(
             ddp.eval()
 
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
-            recons = edm_sampler(ddp.module, latents, torch.zeros_like(latents))
+            recons = unconditional_huen_sampler(ddp.module, latents, torch.zeros_like(latents))
 
-            recons = recons.to(torch.float32)
-
-            recon_mag = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=False)
-            recon_pha = trajectory.root_summed_squares(trajectory.float_to_complex(recons/torch.pi), phase=True)
+            recon_mag = trajectory.root_summed_squares(recons, phase=False)
+            recon_pha = trajectory.root_summed_squares(recons, phase=True)
             
             # Save images.
             os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
@@ -196,8 +194,8 @@ def training_loop(
             visualize.tensor_to_image(torch.tensor(recon_mag).unsqueeze(0), normalize=True).save(savename_mag)
             visualize.tensor_to_image(torch.tensor(recon_pha).unsqueeze(0), normalize=True).save(savename_pha)
 
-            image_to_save_mag = (((recon_mag)-0.3) * 255).clip(0,255).astype(np.uint8)
-            image_to_save_pha = (((recon_pha)-0.3) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_mag = (((recon_mag)-0.5) * 255).clip(0,255).astype(np.uint8)
+            image_to_save_pha = (((recon_pha)-0.5) * 255).clip(0,255).astype(np.uint8)
             image_to_save = PIL.Image.fromarray(np.concatenate((image_to_save_mag, image_to_save_pha),axis=1)[0,:,:],'L')
         
 
