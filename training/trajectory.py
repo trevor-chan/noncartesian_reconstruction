@@ -267,12 +267,11 @@ def magphase_to_complex(image_tensor, device = None):
     assert len(image_tensor.shape) > 2 & len(image_tensor.shape) < 5, f'expected shape to be in form [2*ch, w, h] or [b, 2*ch, w, h], got {image_tensor.shape}'
     assert image_tensor.shape[-3] % 2 == 0, 'channel dimension is not even, what are you doing?'
 
-    image_tensor = np.array(image_tensor.cpu())
-
     if len(image_tensor.shape) == 3:
         complex = image_tensor[:image_tensor.shape[1]//2] * (torch.cos(image_tensor[image_tensor.shape[1]//2:]*torch.pi) + torch.sin(image_tensor[image_tensor.shape[1]//2:]*torch.pi) * 1j)
     else:
         complex = image_tensor[:,:image_tensor.shape[1]//2] * (torch.cos(image_tensor[:,image_tensor.shape[1]//2:]*torch.pi) + torch.sin(image_tensor[:,image_tensor.shape[1]//2:]*torch.pi) * 1j)
 
+    complex = np.array(complex.cpu())
     return complex.astype(np.complex64)
 
