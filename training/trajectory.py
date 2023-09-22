@@ -240,3 +240,39 @@ def float_to_complex(image_tensor, device = None):
         imag = image_tensor[:, image_tensor.shape[-3]//2:] * 1j
 
     return (real+imag).astype(np.complex64)
+
+
+# convert numpy array of type complex64 and shape [ch, w, h] or [b, ch, w, h] to torch tensor of type float32 and shape [2*ch, w, h] or [b, 2*ch, w, h]
+def complex_to_magphase(image_array, device = None):
+    assert isinstance(image_array,np.ndarray) or isinstance(image_array,torch.Tensor) , f'expected a numpy ndarray or torch tensor but got type {type(image_array)}'
+    assert image_array.dtype == np.dtype(np.complex64) or image_array.dtype == torch.complex64, f'expected a datatype of np.complex64 but got type {image_array.dtype}'
+    assert len(image_array.shape) > 2 & len(image_array.shape) < 5, f'expected shape to be in form [ch, w, h] or [b, ch, w, h], got {image_array.shape}'
+
+    if isinstance(image_array,np.ndarray):
+        mag = np.abs(image_array)
+        pha = np.angle(image_array) / np.pi
+        temp_array = np.concatenate((mag, pha), axis=-3)
+        return torch.tensor(temp_array, dtype=torch.float32, device=device)
+    else:
+        mag = torch.abs(image_array)
+        pha = torch.angle(image_array) / torch.pi
+        temp_array = torch.cat((mag, pha), dim=-3)
+        return temp_array.to(torch.float32).to(device)
+    
+
+# convert torch tensor of type float32 and shape [2*ch, w, h] or [b, 2*ch, w, h] to numpy array of type complex64 and shape [ch, w, h] or [b, ch, w, h]
+def magphase_to_complex(image_tensor, device = None):
+    assert isinstance(image_tensor,torch.Tensor), f'expected a torch tensor but got type {type(image_tensor)}'
+    assert image_tensor.dtype == torch.float32, f'expected a datatype of torch.float32 but got type {image_tensor.dtype}'
+    assert len(image_tensor.shape) > 2 & len(image_tensor.shape) < 5, f'expected shape to be in form [2*ch, w, h] or [b, 2*ch, w, h], got {image_tensor.shape}'
+    assert image_tensor.shape[-3] % 2 == 0, 'channel dimension is not even, what are you doing?'
+
+    image_tensor = np.array(image_tensor.cpu())
+
+    if len(image_tensor.shape) == 3:
+        complex = image_tensor[:image_tensor.shape[1]//2] * (torch.cos(image_tensor[image_tensor.shape[1]//2:]*torch.pi) + torch.sin(image_tensor[image_tensor.shape[1]//2:]*torch.pi) * 1j)
+    else:
+        complex = image_tensor[:,:image_tensor.shape[1]//2] * (torch.cos(image_tensor[:,image_tensor.shape[1]//2:]*torch.pi) + torch.sin(image_tensor[:,image_tensor.shape[1]//2:]*torch.pi) * 1j)
+
+    return complex.astype(np.complex64)
+
