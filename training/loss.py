@@ -144,9 +144,9 @@ class ConditionalEDMLoss:
 
         # convert image and prior to magnitude phase representations
         y_mag = torch.abs(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
-        y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j)
+        y_pha = torch.angle(y[:,:y.shape[1]//2]+y[:,y.shape[1]//2:]*1j) / torch.pi
         prior_mag = torch.abs(prior[:,:prior.shape[1]//2]+prior[:,prior.shape[1]//2:]*1j)
-        prior_pha = torch.angle(prior[:,:prior.shape[1]//2]+prior[:,prior.shape[1]//2:]*1j)
+        prior_pha = torch.angle(prior[:,:prior.shape[1]//2]+prior[:,prior.shape[1]//2:]*1j) / torch.pi
 
         y_magphase = torch.cat((y_mag, y_pha), dim=1)
         prior_magphase = torch.cat((prior_mag, prior_pha), dim=1)

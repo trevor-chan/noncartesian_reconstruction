@@ -91,7 +91,9 @@ def conditional_huen_sampler(
                 denoised = net(x_in, t_next, class_labels).to(torch.float64)
                 d_prime = (x_next - denoised) / t_next
                 x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
-
+        
+        # convert back to real imaginary representation
+        x_next = x_next[:,:x_next.shape[1]//2] * (torch.cos(x_next[:,x_next.shape[1]//2:]*torch.pi) + torch.sin(x_next[:,x_next.shape[1]//2:]*torch.pi) * 1j)
         return x_next
 
     def chs_yield(
