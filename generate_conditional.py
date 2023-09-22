@@ -93,7 +93,8 @@ def conditional_huen_sampler(
                 x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
         
         # convert back to real imaginary representation
-        x_next = x_next[:,:x_next.shape[1]//2] * (torch.cos(x_next[:,x_next.shape[1]//2:]*torch.pi) + torch.sin(x_next[:,x_next.shape[1]//2:]*torch.pi) * 1j)
+        x_next = magphase_to_complex(x_next)
+        
         return x_next
 
     def chs_yield(
