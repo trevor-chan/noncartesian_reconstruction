@@ -198,10 +198,8 @@ def training_loop(
             latents = torch.randn([1, net.img_channels, net.img_resolution, net.img_resolution], device=device)
             recons = conditional_huen_sampler(ddp.module, latents, priors, torch.zeros_like(latents), to_yield=False)
 
-            recons = recons.to(torch.float32)
-
-            recon_mag = trajectory.root_summed_squares(trajectory.float_to_complex(recons), phase=False)
-            recon_pha = trajectory.root_summed_squares(trajectory.float_to_complex(recons/torch.pi), phase=True)
+            recon_mag = trajectory.root_summed_squares(recons, phase=False)
+            recon_pha = trajectory.root_summed_squares(recons, phase=True)
             
             # Save images.
             os.makedirs(f'{run_dir}/validation_images', exist_ok=True)
