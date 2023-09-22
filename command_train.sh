@@ -1,0 +1,1 @@
+torchrun --standalone --nproc_per_node=2 train_nc_precompute.py --outdir=training-runs --data=datasets/precompute_T2_train --batch=64 --dump=100 --lr=0.00002 --fp16=1 --workers=16 --cache=False --resume=/home/trevor/repos/noncartesian_reconstruction/training-runs/00012-precompute_T2_train-uncond-ddpmpp-edm-gpus2-batch64-fp16/training-state-015013.pt
