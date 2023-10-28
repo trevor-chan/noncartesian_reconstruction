@@ -16,16 +16,16 @@ def generate_trajectory(matsize, interleave_range = (1,8), undersampling = 1, al
 
 def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
 
-    fov = .25 #in meters
-    adjustedshape = np.power(matsize[0]**2+matsize[1]**2,0.5)
-    frequency_encode_undersampling = 1
-    max_gradient_amp = 0.045 #T/m  4.5 G/cm, or 2.2 G/cm
-    max_slew_rate = 0.1 #T/m/ms
+    fov = .22 #in meters
+    # adjustedshape = np.power(matsize[0]**2+matsize[1]**2,0.5)
+    adjustedshape = matsize[0]
+    frequency_encode_undersampling = 1 # default to 1
+    max_gradient_amp = 0.045 #T/m  4.5 G/cm, or 2.2 G/cm       - Brian uses 0.040
+    max_slew_rate = 0.2 * 1000 #T/m/s
 
-    u = .0365 / undersampling * (1-2*(((1/alpha)**4)-(1/alpha)**2)) # Empirically determined as a decent approximation for maintaining a steady effective undersampling rate
+    # u = .0365 / undersampling * (1-2*(((1/alpha)**4)-(1/alpha)**2)) # Empirically determined as a decent approximation for maintaining a steady effective undersampling rate
+    u = undersampling
     
-    interleaves = interleaves
-
     points = sigpy.mri.spiral(fov, 
                             adjustedshape, 
                             frequency_encode_undersampling, 
@@ -35,9 +35,9 @@ def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
                             max_gradient_amp, 
                             max_slew_rate)
 
-    points = np.asarray([i for i in points if -matsize[0]/2<=i[0]<=matsize[0]/2 and -matsize[1]/2<=i[1]<=matsize[1]/2]) # square 
+    # points = np.asarray([i for i in points if -matsize[0]/2<=i[0]<=matsize[0]/2 and -matsize[1]/2<=i[1]<=matsize[1]/2]) # square 
 
-    points = np.delete(points, np.where((np.hypot(points[:,0],points[:,1]) >= matsize[0]/2)), axis=0) # circle
+    # points = np.delete(points, np.where((np.hypot(points[:,0],points[:,1]) >= matsize[0]/2)), axis=0) # circle
     
     # information_ratio = points.shape[0] / (matsize[0]*matsize[1]) #recalculate the new information sampling
     # print('information_ratio: {}'.format(information_ratio))
@@ -89,7 +89,7 @@ def prealloc_nufft(image_array, points):
 
         return nufftobj
     else:
-        assert isinstance(points,list), f'expected points to a list of numpy ndarrays but got type {type(points)}'
+        # assert isinstance(points,list), f'expected points to a list of numpy ndarrays but got type {type(points)}'
         nufftobjs = []
         for i in range(image_array.shape[0]):
             nufftobj = pynufft.NUFFT()
@@ -123,8 +123,8 @@ def forward_nufft(x, nufftobjs):
     else:
         assert isinstance(nufftobjs,list), 'provided a batch of images, requires a list of preallocated nufft objects'
         batches = x.shape[0]
-        y = np.zeros((x.shape[0], x.shape[1], nufftobjs[b].M[0]), dtype=np.complex64)
         for b in range(batches):
+            y = np.zeros((x.shape[0], x.shape[1], nufftobjs[b].M[0]), dtype=np.complex64)
             channels = np.count_nonzero(np.count_nonzero(np.sum(x[b],axis=-1), axis=-1))
             for ch in range(channels):
                 y[b,ch] = nufftobjs[b].forward(x[b,ch])
@@ -145,8 +145,8 @@ def inverse_nufft(y, nufftobjs, maxiter=100):
     else:
         assert isinstance(nufftobjs,list), 'provided a batch of frequency samples, requires a list of preallocated nufft objects'
         batches = y.shape[0]
-        x = np.zeros((y.shape[0],y.shape[1],nufftobjs.Nd[0],nufftobjs.Nd[1]), dtype=np.complex64)
         for b in range(batches):
+            x = np.zeros((y.shape[0],y.shape[1],nufftobjs[b].Nd[0],nufftobjs[b].Nd[1]), dtype=np.complex64)
             channels = np.count_nonzero(np.count_nonzero(y[b], axis=-1))
             for ch in range(channels):
                  x[b,ch] = nufftobjs[b].solve(y[b,ch], solver='cg',maxiter=maxiter)
