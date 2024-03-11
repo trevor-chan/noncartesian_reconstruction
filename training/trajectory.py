@@ -11,11 +11,11 @@ import PIL
 def generate_trajectory(matsize, interleave_range = (1,8), undersampling = 1, alpha_range = (1,4)):
     interleaves = int(np.random.rand()*(interleave_range[1]-interleave_range[0])+interleave_range[0])
     alpha = np.random.rand()*(alpha_range[1]-alpha_range[0])+alpha_range[0]
-
+    
     return make_trajectory(matsize, undersampling = undersampling, interleaves = interleaves, alpha = alpha)
 
 def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
-
+    
     fov = .22 #in meters
     # adjustedshape = np.power(matsize[0]**2+matsize[1]**2,0.5)
     adjustedshape = matsize[0]
@@ -37,7 +37,7 @@ def make_trajectory(matsize, undersampling=1, interleaves=1, alpha=1):
 
     # points = np.asarray([i for i in points if -matsize[0]/2<=i[0]<=matsize[0]/2 and -matsize[1]/2<=i[1]<=matsize[1]/2]) # square 
 
-    # points = np.delete(points, np.where((np.hypot(points[:,0],points[:,1]) >= matsize[0]/2)), axis=0) # circle
+    points = np.delete(points, np.where((np.hypot(points[:,0],points[:,1]) >= matsize[0]/2)), axis=0) # circle
     
     # information_ratio = points.shape[0] / (matsize[0]*matsize[1]) #recalculate the new information sampling
     # print('information_ratio: {}'.format(information_ratio))
